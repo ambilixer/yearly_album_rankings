@@ -1,0 +1,5 @@
+# built by tools/build.py (CI builds these for GitHub Pages)
+site/data/*.json
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Best Albums of the Year</title>
+<meta name="description" content="A running ranking of my favorite albums of the year, tracked snapshot by snapshot.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0b0b'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23fff'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="bar">
+  <div class="wrap bar-in">
+    <div class="brand" id="brand">Best Albums</div>
+    <nav class="nav" aria-label="Sections">
+      <a href="#top10">Top 10</a>
+      <a href="#grid">Top 25 grid</a>
+      <a href="#race">The race</a>
+      <a href="#ranking">Full ranking</a>
+      <a href="#vibes">Vibes</a>
+      <a href="#movers">Movers</a>
+      <a href="#ledger">Re-ratings</a>
+      <a href="#genres">Genres</a>
+      <a href="#queue">Queue</a>
+    </nav>
+    <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div class="hero-top">
+      <div>
+        <p class="eyebrow" id="eyebrow">Charlie's running list</p>
+        <h1 id="title">Best albums of <em></em></h1>
+        <p class="lede" id="lede"></p>
+      </div>
+      <div class="snap-ctl">
+        <span class="label">Snapshot</span>
+        <button class="btn" id="snap-prev" type="button" aria-label="Previous snapshot">←</button>
+        <select class="select" id="snap" aria-label="Snapshot"></select>
+        <button class="btn" id="snap-next" type="button" aria-label="Next snapshot">→</button>
+        <select class="select" id="year" aria-label="Year" hidden></select>
+      </div>
+    </div>
+    <div class="hero-body">
+      <div class="number-one" id="n1"></div>
+      <div class="tiles" id="tiles"></div>
+    </div>
+  </div>
+
+  <section class="block" id="top10">
+    <div class="block-head">
+      <div>
+        <h2>Top 10</h2>
+        <p class="sub">The line under each album is its rank across every snapshot so far (higher is better). Badges compare this snapshot to the previous one.</p>
+      </div>
+    </div>
+    <div class="card"><div class="top10" id="top10-list"></div></div>
+  </section>
+
+  <section class="block" id="grid">
+    <div class="block-head">
+      <div>
+        <h2>Top 25</h2>
+        <p class="sub">The current top 25 as a grid, read left to right. Hover a cover for details.</p>
+      </div>
+    </div>
+    <div class="topster" id="topster"></div>
+    <div class="topster-legend" id="topster-legend"></div>
+  </section>
+
+  <section class="block" id="race">
+    <div class="block-head">
+      <div>
+        <h2>The race</h2>
+        <p class="sub">Every album's rank at every snapshot. Snapshots are evenly spaced, not to scale in time. Hover a line to follow one album.</p>
+      </div>
+      <div class="controls">
+        <div class="seg" id="bump-scope" role="group" aria-label="Albums shown">
+          <button type="button" data-v="10">Top 10</button><button type="button" data-v="25">Top 25</button><button type="button" data-v="all">All</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="legend" id="bump-legend"></div>
+      <div class="chart" id="bump"></div>
+    </div>
+  </section>
+
+  <section class="block" id="ranking">
+    <div class="block-head">
+      <div>
+        <h2>Full ranking</h2>
+        <p class="sub">The whole list for the selected snapshot, split by star tier. Filter by vibe to find recommendations.</p>
+      </div>
+      <div class="controls">
+        <input class="input" id="q" type="search" placeholder="Search artist, album, genre" autocomplete="off">
+        <div class="seg" id="f-artsy" role="group" aria-label="Artsy filter"><button type="button" data-v="any">Artsy: any</button><button type="button" data-v="yes">Yes</button><button type="button" data-v="no">No</button></div>
+        <div class="seg" id="f-aggr" role="group" aria-label="Aggressive filter"><button type="button" data-v="any">Aggressive: any</button><button type="button" data-v="yes">Yes</button><button type="button" data-v="no">No</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="count" id="rank-count"></p>
+      <div class="tbl-wrap">
+        <table class="rank" aria-label="Full ranking">
+          <thead><tr>
+            <th class="r-n">#</th><th>Move</th><th>Album</th><th>Stars</th><th class="hide-sm">Genre</th><th>Vibe</th><th class="hide-sm">Rank history</th><th class="hide-sm">Debut</th>
+          </tr></thead>
+          <tbody id="rank-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="vibes">
+    <div class="block-head">
+      <div>
+        <h2>Vibe map</h2>
+        <p class="sub">Every ranked album sorted into the two quick filters: artsy and aggressive. Bigger covers are the top 10.</p>
+      </div>
+    </div>
+    <div class="vibes" id="vibe-map"></div>
+  </section>
+
+  <section class="block" id="movers">
+    <div class="block-head">
+      <div>
+        <h2>Movers</h2>
+        <p class="sub" id="movers-sub"></p>
+      </div>
+    </div>
+    <div class="two">
+      <div class="card">
+        <h3>Biggest moves</h3>
+        <p class="note">Albums passed (or passed by) among those already ranked last time. New entries don't count here, so an album pushed down only by new arrivals doesn't show as a drop.</p>
+        <div class="legend" id="movers-legend"></div>
+        <div class="chart" id="movers-chart"></div>
+      </div>
+      <div class="card">
+        <h3>New entries</h3>
+        <p class="note">Albums ranked for the first time in this snapshot, and where they landed.</p>
+        <div class="debuts" id="debuts"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="ledger">
+    <div class="block-head">
+      <div>
+        <h2>Re-ratings</h2>
+        <p class="sub">Albums whose star rating changed between snapshots, shaded by stars (see the key). An outlined cell is where a change happened.</p>
+      </div>
+    </div>
+    <div class="card"><div class="legend" id="ledger-legend"></div><div class="tbl-wrap"><div class="ledger" id="ledger-grid"></div></div></div>
+  </section>
+
+  <section class="block" id="genres">
+    <div class="block-head">
+      <div>
+        <h2>Genre mix</h2>
+        <p class="sub">Primary genre of every ranked album in this snapshot, split by whether it's in the top 25.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="legend" id="genre-legend"></div>
+      <div class="chart" id="genre-chart"></div>
+      <p class="note-sm" id="genre-note"></p>
+    </div>
+  </section>
+
+  <section class="block" id="queue">
+    <div class="block-head">
+      <div>
+        <h2>The queue</h2>
+        <p class="sub" id="queue-sub">Releases catalogued on RYM but not rated yet, grouped by how excited I am about them.</p>
+      </div>
+    </div>
+    <div class="queue" id="queue-list"></div>
+  </section>
+
+  <details class="about" id="about">
+    <summary>About this data</summary>
+    <p><strong>Where it comes from.</strong> Star ratings are mine, from Rate Your Music, out of 5. At each snapshot I export my RYM collection and rank every rated release from the year by hand. Rank always respects stars: nothing rated 3.5 can sit above anything rated 4.0. Any release type counts (LP, EP, mixtape, compilation).</p>
+    <p><strong>Stars can differ from RYM.</strong> The stars shown for a snapshot are the ones I gave while ranking. I sometimes re-evaluate an album while ranking, so these can differ from what RYM had on the export date.</p>
+    <p><strong>Badges.</strong> ▲/▼ is places gained or lost since the previous snapshot. <em>New</em> means first time ranked; <em>Back</em> means it returned after dropping out. <em>Hot debut</em>: first ranked within the last two snapshots and now top 10. <em>Surging</em> / <em>Slipping</em>: passed (or was passed by) 5+ albums that were already ranked, over the last three snapshots, and still heading that way. New entries landing above an album don't count against it. <em>Staple</em>: top 10 in every snapshot since it debuted, across at least four.</p>
+    <p><strong>The queue.</strong> Releases in my RYM collection from this year that I haven't rated. The artist note is my average RYM rating of that artist's other releases, matched by name.</p>
+    <p><strong>Covers.</strong> Where no cover art is on file, a placeholder tile is generated from the album's ID.</p>
+  </details>
+  <p class="foot" id="foot"></p>
+</main>
+
+<div id="tip" role="tooltip" hidden></div>
+<script src="vendor/d3.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
