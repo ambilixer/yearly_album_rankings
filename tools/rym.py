@@ -16,7 +16,7 @@ META = DATA / "meta.csv"
 DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 RANK_COLS = ["rank", "rym_id", "stars", "artist", "album", "note"]
-META_COLS = ["rym_id", "art_url", "release_date", "date_source"]
+META_COLS = ["rym_id", "artist", "album", "art_url", "release_date", "date_source", "match", "checked", "locked"]
 TAG_COLS = ["rym_id", "artist", "album", "genre", "artsy", "aggressive", "excitement"]
 EXCITEMENT = {3: "Must listen", 2: "Somewhat hype", 1: "Take or leave"}
 
@@ -55,6 +55,8 @@ def read_export(path: Path) -> list[dict]:
             out.append({
                 "rym_id": rid,
                 "artist": artist_name(row),
+                # the name in its original script (e.g. 劣 for Lie), for metadata lookups
+                "artist_orig": f"{clean(row.get('First Name'))} {clean(row.get('Last Name'))}".strip(),
                 "album": clean(row.get("Title")),
                 "year": int(float(year)) if year else None,
                 "rating10": int(float(row.get("Rating") or 0)),  # RYM: 0 = unrated, else half-stars x2

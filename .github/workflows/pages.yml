@@ -4,15 +4,20 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      retry:
+        description: "Retry albums that found no art or date recently"
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -22,6 +27,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Look up cover art and release dates
+        continue-on-error: true
+        run: python tools/enrich.py ${{ inputs.retry && '--retry' || '' }}
+      - name: Save lookups back to the repo
+        run: |
+          if ! git diff --quiet -- data/meta.csv; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/meta.csv
+            git commit -m "Update cover art and release dates [skip ci]"
+            git pull --rebase origin main
+            git push
+          fi
       - name: Build data (fails if any snapshot breaks the ranking rules)
         run: python tools/build.py
       - uses: actions/upload-pages-artifact@v3

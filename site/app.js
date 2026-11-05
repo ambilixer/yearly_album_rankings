@@ -6,6 +6,7 @@
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const fmtDate = (d) => { const [, m, day] = d.split("-"); return `${MONTHS[+m - 1]} ${+day}`; };
   const fmtStars = (s) => s.toFixed(1);
+  const fmtRel = (a) => (a.releasedSource === "estimate" ? "~" : "") + fmtLong(a.released);
   const fmtLong = (d) => { const [y, m, day] = d.split("-"); return day ? `${MONTHS[+m - 1]} ${+day}, ${y}` : m ? `${MONTHS[+m - 1]} ${y}` : y; };
   const qs = new URLSearchParams(location.search);
 
@@ -45,7 +46,7 @@
     if (a.stars[s] != null) bits.push(`${fmtStars(a.stars[s])} stars`);
     if (a.genre) bits.push(a.genre);
     if (bits.length) rows.push(["tn", bits.join(" · ")]);
-    if (a.released) rows.push(["ts", `Released ${fmtLong(a.released)}`]);
+    if (a.released) rows.push(["ts", `Released ${fmtRel(a)}`]);
     const v = [a.artsy && "Artsy", a.aggressive && "Aggressive"].filter(Boolean).join(" · ");
     if (v) rows.push(["ts", v]);
     return rows.concat(extra);
@@ -144,7 +145,9 @@
   function cover(a, tiny = false, bare = false) {
     const c = h("div", "cover" + (tiny ? " tiny" : ""));
     if (a.art) {
-      const img = new Image(); img.src = a.art; img.alt = `${a.album} cover`; img.loading = "lazy"; img.decoding = "async";
+      const img = new Image(); img.alt = `${a.album} cover`; img.loading = "lazy"; img.decoding = "async"; img.referrerPolicy = "no-referrer";
+      img.onerror = () => { const alt = cover({ ...a, art: null }, tiny, bare); c.replaceWith(alt); };
+      img.src = a.art;
       c.append(img);
       return c;
     }
@@ -232,6 +235,7 @@
       meta.append(starsEl(a.stars[s]));
       if (a.genre) meta.append(h("span", "genre", a.genre));
       meta.append(vibeChips(a));
+      if (a.released) meta.append(h("span", "genre rel", `Released ${fmtRel(a)}`));
       main.append(meta);
       const sp = h("div", "t10-spark");
       const best = d3.min(S.snaps.slice(0, S.si + 1), (x) => a.ranks[x]);
@@ -263,10 +267,10 @@
       if (a.artsy) { const v = h("span", "ts-v"); v.append(h("span", "dot artsy"), h("span", "ts-vl", "Artsy")); vibes.append(v); }
       if (a.aggressive) { const v = h("span", "ts-v"); v.append(h("span", "dot aggr"), h("span", "ts-vl", "Aggressive")); vibes.append(v); }
       if (vibes.childElementCount) info.append(vibes);
-      if (a.released) info.append(h("div", "ts-date", fmtLong(a.released)));
+      if (a.released) info.append(h("div", "ts-date", `Released ${fmtRel(a)}`));
       cell.append(cover(a, false, true), info, h("span", "topster-n", String(a.ranks[s])));
       cell.setAttribute("aria-label", `#${a.ranks[s]} ${a.album} by ${a.artist}`);
-      bindTip(cell, () => [["tt", a.album], ["ts", a.artist]].concat(a.released ? [["ts", `Released ${fmtLong(a.released)}`]] : []));
+      bindTip(cell, () => [["tt", a.album], ["ts", a.artist]].concat(a.released ? [["ts", `Released ${fmtRel(a)}`]] : []));
       return cell;
     }));
     $("topster-legend").replaceChildren(...list.map((a) => {
