@@ -6,11 +6,12 @@
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const fmtDate = (d) => { const [, m, day] = d.split("-"); return `${MONTHS[+m - 1]} ${+day}`; };
   const fmtStars = (s) => s.toFixed(1);
+  const fmtLong = (d) => { const [y, m, day] = d.split("-"); return day ? `${MONTHS[+m - 1]} ${+day}, ${y}` : m ? `${MONTHS[+m - 1]} ${y}` : y; };
   const qs = new URLSearchParams(location.search);
 
   const S = {
     data: null, byId: new Map(), snaps: [], si: 0,
-    bump: "10", q: "", artsy: "any", aggr: "any", hot: null,
+    bump: "10", q: "", artsy: "any", aggr: "any",
   };
 
   // ---------- theme ----------
@@ -44,6 +45,7 @@
     if (a.stars[s] != null) bits.push(`${fmtStars(a.stars[s])} stars`);
     if (a.genre) bits.push(a.genre);
     if (bits.length) rows.push(["tn", bits.join(" · ")]);
+    if (a.released) rows.push(["ts", `Released ${fmtLong(a.released)}`]);
     const v = [a.artsy && "Artsy", a.aggressive && "Aggressive"].filter(Boolean).join(" · ");
     if (v) rows.push(["ts", v]);
     return rows.concat(extra);
@@ -53,7 +55,7 @@
     el.addEventListener("pointerleave", hideTip);
     el.addEventListener("pointerdown", (ev) => showTip(ev, rowsFn()));
   }
-  document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest(".cover, svg, .lg-cell, .vc, .topster-cell")) hideTip(); });
+  document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest(".cover, svg, .topster-cell")) hideTip(); });
 
   // ---------- helpers on the data ----------
   const snap = () => S.snaps[S.si];
@@ -68,7 +70,7 @@
     const d = a.ranks[p] - a.ranks[s];
     return { kind: d > 0 ? "up" : d < 0 ? "down" : "flat", d };
   }
-  // Places gained among albums ranked in BOTH snapshots: strips out the push-down
+  // Places gained among albums ranked in BOTH updates: strips out the push-down
   // effect of new entries. Returns null if the album isn't in both.
   const relCache = new Map();
   function relMove(a, i0, i1) {
@@ -105,10 +107,22 @@
   function moveBadge(m) {
     if (!m) return h("span", "badge flat", "·");
     if (m.kind === "new") return h("span", "badge new", "New");
-    if (m.kind === "back") return h("span", "badge", "Back");
+    if (m.kind === "back") return h("span", "badge back", "↺ Back");
     if (m.kind === "flat") return h("span", "badge flat", "–");
     const b = h("span", "badge " + m.kind, (m.kind === "up" ? "▲" : "▼") + Math.abs(m.d));
     b.setAttribute("aria-label", `${m.kind === "up" ? "up" : "down"} ${Math.abs(m.d)} places`);
+    return b;
+  }
+  const HEAT = {
+    "Hot debut": ["hot", "✦", "Arrived in the last two updates and went straight to the top 10"],
+    "Surging": ["surge", "↗", "Passed 5+ albums that were already on the list over the last three updates"],
+    "Slipping": ["slip", "↘", "Passed by 5+ albums that were already on the list over the last three updates"],
+    "Staple": ["staple", "◆", "Top 10 in every update since it arrived (at least four)"],
+  };
+  function heatBadge(name) {
+    const [cls, icon] = HEAT[name];
+    const b = h("span", "badge heat " + cls);
+    b.append(h("span", "bi", icon), document.createTextNode(name));
     return b;
   }
   function starsEl(v) {
@@ -127,7 +141,7 @@
 
   // deterministic placeholder art (decorative only)
   function hash(n) { let x = n | 0; x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); return (x ^ (x >>> 16)) >>> 0; }
-  function cover(a, tiny = false) {
+  function cover(a, tiny = false, bare = false) {
     const c = h("div", "cover" + (tiny ? " tiny" : ""));
     if (a.art) {
       const img = new Image(); img.src = a.art; img.alt = `${a.album} cover`; img.loading = "lazy"; img.decoding = "async";
@@ -138,14 +152,14 @@
     const l1 = 0.42 + ((k >>> 12) % 18) / 100, l2 = 0.22 + ((k >>> 17) % 12) / 100;
     const g = h("div", "cover-gen");
     g.style.background = `radial-gradient(circle at ${20 + (k % 60)}% ${15 + ((k >>> 5) % 50)}%, oklch(${l1 + 0.12} 0.11 ${h1} / .9), transparent 55%), linear-gradient(${ang}deg, oklch(${l1} 0.09 ${h1}), oklch(${l2} 0.07 ${h2}))`;
-    g.append(h("div", "cg-t", tiny ? (a.album.trim()[0] || "?").toUpperCase() : a.album), h("div", "cg-a", a.artist));
+    if (!bare) g.append(h("div", "cg-t", tiny ? (a.album.trim()[0] || "?").toUpperCase() : a.album), h("div", "cg-a", a.artist));
     g.setAttribute("aria-hidden", "true");
     c.append(g);
     c.setAttribute("role", "img"); c.setAttribute("aria-label", `${a.album} by ${a.artist}`);
     return c;
   }
 
-  // rank sparkline up to the current snapshot
+  // rank sparkline up to the selected update
   function spark(a, w = 140, ht = 34) {
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
@@ -176,7 +190,10 @@
     $("title").innerHTML = "";
     $("title").append(document.createTextNode("Best albums of "), h("em", null, String(S.data.year)));
     document.title = `Best Albums of ${S.data.year}`;
-    $("lede").textContent = `${list.length} albums ranked as of ${fmtDate(s)}, ${S.data.year}, across ${S.si + 1} snapshot${S.si ? "s" : ""} since ${fmtDate(S.snaps[0])}.`;
+    const latest = S.si === S.snaps.length - 1;
+    $("lede").textContent = latest
+      ? `My favorite releases of ${S.data.year}, ranked. Last updated ${fmtLong(s)}.`
+      : `My favorite releases of ${S.data.year}, ranked. You're looking at the list as it stood on ${fmtLong(s)}; the latest update is ${fmtLong(S.snaps[S.snaps.length - 1])}.`;
     const n1 = $("n1"); n1.replaceChildren();
     if (a) {
       const right = h("div");
@@ -186,21 +203,18 @@
       meta.append(vibeChips(a));
       const prevNo1 = S.si > 0 ? ranked(S.snaps[S.si - 1])[0] : null;
       const atTop = S.snaps.slice(0, S.si + 1).filter((x) => a.ranks[x] === 1).length;
-      const tag = prevNo1 && prevNo1.id !== a.id ? `New #1 · took over from ${prevNo1.artist}'s ${prevNo1.album}` : `#1 · ${atTop} snapshot${atTop === 1 ? "" : "s"} on top`;
+      const tag = prevNo1 && prevNo1.id !== a.id ? `New #1 · took over from ${prevNo1.artist}'s ${prevNo1.album}` : `#1 · on top in ${atTop} of ${S.si + 1} update${S.si ? "s" : ""}`;
       right.append(h("div", "n1-tag", tag), h("div", "n1-title", a.album), h("div", "n1-artist", a.artist), meta);
       n1.append(cover(a), right);
     }
     const tier1 = list.filter((x) => x.stars[s] >= 4).length;
     const queue = S.data.unrated.length;
     const debuts = list.filter((x) => move(x)?.kind === "new").length;
-    const genres = new Set(list.map((x) => x.genre).filter(Boolean)).size;
     const tiles = [
-      [list.length, "albums ranked", S.si ? `${list.length - S.data.snapshotSizes[S.snaps[S.si - 1]] >= 0 ? "+" : ""}${list.length - S.data.snapshotSizes[S.snaps[S.si - 1]]} since ${fmtDate(S.snaps[S.si - 1])}` : "first snapshot"],
+      [list.length, "albums ranked", S.si ? `${list.length - S.data.snapshotSizes[S.snaps[S.si - 1]] >= 0 ? "+" : ""}${list.length - S.data.snapshotSizes[S.snaps[S.si - 1]]} since ${fmtDate(S.snaps[S.si - 1])}` : "first update"],
       [tier1, "rated 4 stars or more", `${Math.round((tier1 / Math.max(1, list.length)) * 100)}% of the list`],
-      [debuts, "new this snapshot", S.si ? `vs ${fmtDate(S.snaps[S.si - 1])}` : "everything is new"],
-      [queue, "in the queue", `unrated, as of the ${fmtDate(S.data.exports[S.data.exports.length - 1])} export`],
-      [genres, "genres", "primary genre per album"],
-      [S.snaps.length, "snapshots", `${fmtDate(S.snaps[0])} to ${fmtDate(S.snaps[S.snaps.length - 1])}`],
+      [debuts, "new since last update", S.si ? `previous update ${fmtDate(S.snaps[S.si - 1])}` : "everything is new"],
+      [queue, "in the queue", "saved, not rated yet"],
     ];
     $("tiles").replaceChildren(...tiles.map(([v, l, sub]) => {
       const t = h("div", "tile"); t.append(h("div", "tile-v", String(v)), h("div", "tile-l", l), h("div", "tile-s", sub)); return t;
@@ -225,7 +239,7 @@
       const mv = h("div", "t10-move");
       mv.append(moveBadge(move(a)));
       const ht = heat(a);
-      if (ht) mv.append(h("span", "badge heat", ht));
+      if (ht) mv.append(heatBadge(ht));
       const c = cover(a);
       bindTip(c, () => albumTip(a));
       row.append(h("div", "t10-rank", String(a.ranks[s])), c, main, sp, mv);
@@ -239,8 +253,20 @@
     const s = snap(), list = ranked().slice(0, 25);
     $("topster").replaceChildren(...list.map((a) => {
       const cell = h("div", "topster-cell");
-      cell.append(cover(a), h("span", "topster-n", String(a.ranks[s])));
-      bindTip(cell, () => albumTip(a));
+      const info = h("div", "ts-info");
+      const st = h("div", "ts-stars");
+      const bar = h("span", "stars light"); const fill = h("span"); fill.style.width = (a.stars[s] / 5) * 100 + "%"; bar.append(fill);
+      st.append(bar, h("span", "ts-num", fmtStars(a.stars[s])));
+      info.append(st);
+      if (a.genre) info.append(h("div", "ts-genre", a.genre));
+      const vibes = h("div", "ts-vibes");
+      if (a.artsy) { const v = h("span", "ts-v"); v.append(h("span", "dot artsy"), h("span", "ts-vl", "Artsy")); vibes.append(v); }
+      if (a.aggressive) { const v = h("span", "ts-v"); v.append(h("span", "dot aggr"), h("span", "ts-vl", "Aggressive")); vibes.append(v); }
+      if (vibes.childElementCount) info.append(vibes);
+      if (a.released) info.append(h("div", "ts-date", fmtLong(a.released)));
+      cell.append(cover(a, false, true), info, h("span", "topster-n", String(a.ranks[s])));
+      cell.setAttribute("aria-label", `#${a.ranks[s]} ${a.album} by ${a.artist}`);
+      bindTip(cell, () => [["tt", a.album], ["ts", a.artist]].concat(a.released ? [["ts", `Released ${fmtLong(a.released)}`]] : []));
       return cell;
     }));
     $("topster-legend").replaceChildren(...list.map((a) => {
@@ -267,7 +293,7 @@
     const x = d3.scalePoint(S.snaps, [m.left, W - m.right]).padding(0.05);
     const y = d3.scaleLinear([1, maxR], [m.top, H - m.bottom]);
     const svg = d3.create("svg").attr("width", "100%").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img")
-      .attr("aria-label", "Bump chart of album ranks across snapshots");
+      .attr("aria-label", "Bump chart of album ranks across updates");
     box.replaceChildren(svg.node());
 
     // axes
@@ -343,6 +369,7 @@
     const want = (flag, v) => v === "any" || (v === "yes") === flag;
     const rows = all.filter((a) => (!q || `${a.artist} ${a.album} ${a.genre}`.toLowerCase().includes(q)) && want(a.artsy, S.artsy) && want(a.aggressive, S.aggr));
     $("rank-count").textContent = rows.length === all.length ? `${all.length} albums` : `${rows.length} of ${all.length} albums match`;
+    renderPills();
     const body = $("rank-body"); body.replaceChildren();
     let tier = null;
     rows.forEach((a) => {
@@ -359,7 +386,7 @@
       const alb = h("div", "r-alb"); const c = cover(a, true); bindTip(c, () => albumTip(a));
       const nm = h("div"); nm.append(h("b", null, a.album), h("span", null, a.artist)); alb.append(c, nm);
       const mv = h("div"); mv.style.display = "flex"; mv.style.gap = "4px"; mv.style.flexWrap = "wrap";
-      mv.append(moveBadge(move(a))); const ht = heat(a); if (ht) mv.append(h("span", "badge heat", ht));
+      mv.append(moveBadge(move(a))); const ht = heat(a); if (ht) mv.append(heatBadge(ht));
       const prev = prevSnap();
       const stCell = h("div"); stCell.append(starsEl(st));
       if (prev && a.stars[prev] != null && a.stars[prev] !== st) {
@@ -378,165 +405,88 @@
     if (!rows.length) { const tr = h("tr"); const c = h("td", "empty", "Nothing matches these filters."); c.colSpan = 8; tr.append(c); body.append(tr); }
   }
 
-  // ---------- vibe map ----------
-  function renderVibes() {
-    const s = snap(), list = ranked();
-    const cells = [
-      { name: "Artsy", f: (a) => a.artsy && !a.aggressive, r: 2, c: 2 },
-      { name: "Aggressive", f: (a) => !a.artsy && a.aggressive, r: 3, c: 3 },
-      { name: "Artsy and aggressive", f: (a) => a.artsy && a.aggressive, r: 2, c: 3 },
-      { name: "Neither", f: (a) => !a.artsy && !a.aggressive, r: 3, c: 2 },
-    ];
-    const box = $("vibe-map"); box.replaceChildren();
-    const ax = (cls, text, r, c, dot) => { const e = h("div", "v-axis " + cls); if (dot) e.append(h("span", "dot " + dot)); e.append(document.createTextNode(text)); e.style.gridRow = r; e.style.gridColumn = c; return e; };
-    box.append(ax("", "Not aggressive", 1, 2), ax("", "Aggressive", 1, 3, "aggr"), ax("y", "Artsy", 2, 1, "artsy"), ax("y", "Not artsy", 3, 1));
-    cells.forEach((cell) => {
-      const items = list.filter(cell.f);
-      const el = h("div", "v-cell"); el.style.gridRow = cell.r; el.style.gridColumn = cell.c;
-      const head = h("div", "v-head");
-      const avg = items.length ? d3.mean(items, (a) => a.stars[s]) : null;
-      head.append(h("span", "v-name", cell.name), h("span", "v-stat", `${items.length} album${items.length === 1 ? "" : "s"}${avg ? ` · avg ${avg.toFixed(2)} stars · best #${items[0].ranks[s]}` : ""}`));
-      const covers = h("div", "v-covers");
-      items.forEach((a) => {
-        const vc = h("div", "vc" + (a.ranks[s] <= 10 ? " big" : ""));
-        vc.append(cover(a), h("span", "vn", String(a.ranks[s])));
-        bindTip(vc, () => albumTip(a));
-        covers.append(vc);
-      });
-      el.append(head, items.length ? covers : h("div", "q-empty", "None yet."));
-      box.append(el);
-    });
+  // ---------- movers: slope chart ----------
+  function relax(items, gap, lo, hi) {
+    items.sort((p, q) => p.y0 - q.y0);
+    items.forEach((it, k) => { it.y = k ? Math.max(it.y0, items[k - 1].y + gap) : Math.max(lo, it.y0); });
+    const over = items.length ? items[items.length - 1].y - hi : 0;
+    if (over > 0) for (let k = items.length - 1; k >= 0; k--) { const lim = k === items.length - 1 ? hi : items[k + 1].y - gap; if (items[k].y > lim) items[k].y = lim; }
+    return items;
   }
-
-  // ---------- movers ----------
   function renderMovers() {
     const s = snap(), p = prevSnap(), box = $("movers-chart");
-    $("movers-sub").textContent = p ? `What changed between ${fmtDate(p)} and ${fmtDate(s)}.` : "This is the first snapshot, so there's nothing to compare yet.";
-    const both = ranked().filter((a) => a.ranks[p] != null).map((a) => ({ a, d: relMove(a, S.si - 1, S.si) })).filter((x) => x.d);
-    const ups = both.filter((x) => x.d > 0).sort((u, v) => v.d - u.d).slice(0, 8);
-    const downs = both.filter((x) => x.d < 0).sort((u, v) => u.d - v.d).slice(0, 8);
-    const rows = [...ups, ...downs.reverse()];
-    $("movers-legend").replaceChildren(...[["var(--s-blue)", "Moved up"], ["var(--s-red)", "Moved down"]].map(([c, t]) => {
-      const k = h("span", "k"); const sw = h("span", "sw"); sw.style.background = c; k.append(sw, document.createTextNode(t)); return k;
-    }));
-    const W = Math.floor(box.clientWidth);
-    if (!W) return;
-    if (!p || !rows.length) { box.replaceChildren(h("p", "empty", p ? "No album changed places." : "Nothing to compare yet.")); }
-    else {
-      const narrow = W < 520, rowH = narrow ? 40 : 26, labW = narrow ? 0 : Math.min(260, W * 0.45);
-      const H = rows.length * rowH + 28;
-      const maxD = d3.max(rows, (r) => Math.abs(r.d));
-      const x0 = labW + 8, x1 = W - 36;
-      const x = d3.scaleLinear([-maxD * 1.18, maxD * 1.18], [x0, x1]);
-      const svg = d3.create("svg").attr("width", "100%").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img").attr("aria-label", "Biggest rank changes");
-      box.replaceChildren(svg.node());
-      svg.append("line").attr("class", "c-axis").attr("x1", x(0)).attr("x2", x(0)).attr("y1", 0).attr("y2", H - 22);
-      [-maxD, 0, maxD].filter((t, k, arr) => arr.indexOf(t) === k).forEach((t) => svg.append("text").attr("class", "c-tick").attr("x", x(t)).attr("y", H - 6).attr("text-anchor", "middle").text(t > 0 ? `+${t}` : t));
-      rows.forEach((r, i) => {
-        const yc = i * rowH + (narrow ? 28 : rowH / 2);
-        const name = `${r.a.album} · ${r.a.artist}`;
-        const lab = svg.append("text").attr("class", "c-lab").attr("y", narrow ? i * rowH + 12 : yc).attr("dy", "0.32em");
-        if (narrow) lab.attr("x", 0); else lab.attr("x", labW).attr("text-anchor", "end");
-        lab.text(name);
-        const maxW = narrow ? W - 10 : labW - 4;
-        let t = name;
-        while (lab.node().getComputedTextLength() > maxW && t.length > 4) { t = t.slice(0, -2); lab.text(t.trimEnd() + "…"); }
-        const xa = x(Math.min(0, r.d)), xb = x(Math.max(0, r.d));
-        const bar = svg.append("rect").attr("x", xa + (r.d > 0 ? 1 : 0)).attr("width", Math.max(2, xb - xa - 1)).attr("y", yc - 6).attr("height", 12).attr("rx", 3)
-          .attr("fill", r.d > 0 ? "var(--s-blue)" : "var(--s-red)");
-        svg.append("text").attr("class", "c-val").attr("x", r.d > 0 ? xb + 5 : xa - 5).attr("y", yc).attr("dy", "0.32em").attr("text-anchor", r.d > 0 ? "start" : "end")
-          .text(`${r.d > 0 ? "+" : "−"}${Math.abs(r.d)}`);
-        const hit = svg.append("rect").attr("x", 0).attr("y", i * rowH).attr("width", W).attr("height", rowH).attr("fill", "transparent");
-        const tipRows = () => albumTip(r.a, [["tn", `${fmtDate(p)} #${r.a.ranks[p]} → ${fmtDate(s)} #${r.a.ranks[s]}`], ["ts", `${r.d > 0 ? "Passed" : "Passed by"} ${Math.abs(r.d)} album${Math.abs(r.d) === 1 ? "" : "s"} that were already ranked`]]);
-        hit.on("pointermove pointerdown", (ev) => { bar.attr("opacity", 0.8); showTip(ev, tipRows()); }).on("pointerleave", () => { bar.attr("opacity", 1); hideTip(); });
-      });
-    }
+    $("movers-sub").textContent = p ? `What changed between the ${fmtDate(p)} and ${fmtDate(s)} updates.` : "This is the first update of the year, so there's nothing to compare yet.";
+    const UP = "var(--s-blue)", DOWN = "var(--s-red)";
+    $("movers-legend").replaceChildren(...[[UP, "Climbed"], [DOWN, "Fell"], ["var(--axis)", "Everyone else"]].map(([c, t]) => {
+      const k = h("span", "k"); const ln = h("span", "ln"); ln.style.background = c; k.append(ln, document.createTextNode(t)); return k;
+    }), (() => { const k = h("span", "k"); const o = h("span", "ring"); k.append(o, document.createTextNode("New entry")); return k; })());
+
     const debs = ranked().filter((a) => move(a)?.kind === "new" || move(a)?.kind === "back");
     $("debuts").replaceChildren(...(debs.length ? debs.map((a) => {
       const row = h("div", "debut");
-      const nm = h("div", "nm"); nm.append(h("b", null, a.album), h("span", null, `${a.artist} · ${fmtStars(a.stars[s])} stars${move(a).kind === "back" ? " · re-entry" : ""}`));
+      const nm = h("div", "nm"); nm.append(h("b", null, a.album), h("span", null, `${a.artist} · ${fmtStars(a.stars[s])} stars${move(a).kind === "back" ? " · back on the list" : ""}`));
       const c = cover(a, true); bindTip(c, () => albumTip(a));
       const hb = heat(a);
-      row.append(h("div", "at", "#" + a.ranks[s]), c, nm, hb ? h("span", "badge heat", hb) : h("span"));
+      row.append(h("div", "at", "#" + a.ranks[s]), c, nm, hb ? heatBadge(hb) : h("span"));
       return row;
-    }) : [h("p", "empty", p ? "No new albums this time." : "Every album is new in the first snapshot.")]));
-  }
+    }) : [h("p", "empty", p ? "No new albums this time." : "Everything is new in the first update.")]));
 
-  // ---------- re-rating ledger ----------
-  const step = (v) => (v <= 2.5 ? 1 : v <= 3 ? 2 : v <= 3.5 ? 3 : v <= 4 ? 4 : 5);
-  function renderLedger() {
-    const snaps = S.snaps.slice(0, S.si + 1);
-    const items = S.data.albums.map((a) => {
-      const vals = snaps.map((s) => a.stars[s]).filter((v) => v != null);
-      return { a, vals, net: vals.length ? vals[vals.length - 1] - vals[0] : 0 };
-    }).filter((x) => new Set(x.vals).size > 1)
-      .sort((p, q) => (q.net - p.net) || ((p.a.ranks[snap()] ?? 999) - (q.a.ranks[snap()] ?? 999)));
-    const grid = $("ledger-grid"); grid.replaceChildren(); grid.style.setProperty("--n", snaps.length);
-    $("ledger-legend").replaceChildren(...[["s1", "2.5 or less"], ["s2", "3.0"], ["s3", "3.5"], ["s4", "4.0"], ["s5", "4.5+"]].map(([c, t]) => {
-      const k = h("span", "k"); const sw = h("span", "sw " + c); k.append(sw, document.createTextNode(t)); return k;
-    }));
-    if (!items.length) { grid.append(h("p", "empty", "No re-ratings yet.")); return; }
-    const head = h("div", "lg-row head"); head.append(h("div", null, `${items.length} albums`), ...snaps.map((s) => h("div", null, fmtDate(s))), h("div", null, "Net")); grid.append(head);
-    items.forEach(({ a, net }) => {
-      const row = h("div", "lg-row");
-      const nm = h("div", "lg-name"); nm.append(h("b", null, a.album), h("span", null, " · " + a.artist)); nm.title = `${a.album} · ${a.artist}`;
-      row.append(nm);
-      let prev = null;
-      snaps.forEach((s, i) => {
-        const v = a.stars[s];
-        const c = h("div", "lg-cell " + (v == null ? "empty-c" : "s" + step(v)), v == null ? "·" : fmtStars(v));
-        if (v != null && prev != null && v !== prev) c.classList.add("chg");
-        if (v != null) {
-          const was = prev;
-          bindTip(c, () => [["tt", a.album], ["ts", a.artist], ["tn", `${fmtDate(s)}: ${fmtStars(v)} stars${a.ranks[s] ? ` · #${a.ranks[s]}` : ""}`]].concat(was != null && was !== v ? [["ts", `changed from ${fmtStars(was)}`]] : []));
-          prev = v;
-        }
-        row.append(c);
-      });
-      row.append(h("div", "lg-net " + (net > 0 ? "up" : net < 0 ? "down" : ""), net === 0 ? "±0" : `${net > 0 ? "+" : "−"}${Math.abs(net).toFixed(1)}`));
-      grid.append(row);
-    });
-  }
-
-  // ---------- genre mix ----------
-  function renderGenres() {
-    const s = snap(), list = ranked(), box = $("genre-chart");
-    const groups = d3.rollups(list, (v) => v, (a) => a.genre || "untagged");
-    let rows = groups.map(([g, v]) => ({ g, v, top: v.filter((a) => a.ranks[s] <= 25).length }));
-    const singles = rows.filter((r) => r.v.length === 1);
-    rows = rows.filter((r) => r.v.length > 1).sort((p, q) => (q.v.length - p.v.length) || (q.top - p.top) || p.g.localeCompare(q.g));
-    const note = $("genre-note");
-    if (singles.length) {
-      const v = singles.flatMap((r) => r.v).sort((p, q) => p.ranks[s] - q.ranks[s]);
-      note.textContent = `Plus ${singles.length} genres with one album each: ${v.map((a) => `${a.genre || "untagged"} (#${a.ranks[s]})`).join(", ")}.`;
-    } else note.textContent = "";
-    $("genre-legend").replaceChildren(...[["var(--s-blue)", "In the top 25"], ["var(--ramp-1)", "Ranked 26 or lower"]].map(([c, t]) => {
-      const k = h("span", "k"); const sw = h("span", "sw"); sw.style.background = c; k.append(sw, document.createTextNode(t)); return k;
-    }));
     const W = Math.floor(box.clientWidth);
     if (!W) return;
-    const narrow = W < 520, rowH = narrow ? 38 : 26, labW = narrow ? 0 : Math.min(250, W * 0.34);
-    const H = rows.length * rowH + 26;
-    const maxN = d3.max(rows, (r) => r.v.length) || 1;
-    const x0 = labW + 10, x = d3.scaleLinear([0, maxN], [x0, W - 30]);
-    const svg = d3.create("svg").attr("width", "100%").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img").attr("aria-label", "Albums per genre");
+    if (!p) { box.replaceChildren(h("p", "empty", "Nothing to compare yet.")); return; }
+    const both = ranked().filter((a) => a.ranks[p] != null).map((a) => ({ a, d: relMove(a, S.si - 1, S.si), r0: a.ranks[p], r1: a.ranks[s] }));
+    const ups = both.filter((x) => x.d > 0).sort((u, v) => v.d - u.d).slice(0, 6);
+    const downs = both.filter((x) => x.d < 0).sort((u, v) => u.d - v.d).slice(0, 6);
+    const hl = new Map([...ups.map((x) => [x.a.id, "up"]), ...downs.map((x) => [x.a.id, "down"])]);
+    const narrow = W < 560;
+    const m = { top: 30, bottom: 12, left: 44, right: narrow ? 128 : 250 };
+    const maxR = Math.max(S.data.snapshotSizes[p], S.data.snapshotSizes[s]);
+    const H = Math.max(380, Math.min(maxR * 9, 760)) + m.top + m.bottom;
+    const x0 = m.left, x1 = W - m.right;
+    const y = d3.scaleLinear([1, maxR], [m.top, H - m.bottom]);
+    const svg = d3.create("svg").attr("width", "100%").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img").attr("aria-label", "Slope chart of rank changes since the previous update");
     box.replaceChildren(svg.node());
-    const ticks = x.ticks(Math.min(maxN, 6)).filter(Number.isInteger);
-    svg.append("g").selectAll("line").data(ticks).join("line").attr("class", "c-grid").attr("x1", x).attr("x2", x).attr("y1", 0).attr("y2", H - 22);
-    svg.append("g").selectAll("text").data(ticks).join("text").attr("class", "c-tick").attr("x", x).attr("y", H - 6).attr("text-anchor", "middle").text((t) => t);
-    rows.forEach((r, i) => {
-      const yc = i * rowH + (narrow ? 26 : rowH / 2);
-      const lab = svg.append("text").attr("class", r.other ? "c-lab-muted" : "c-lab").attr("y", narrow ? i * rowH + 10 : yc).attr("dy", "0.32em").text(r.g);
-      if (narrow) lab.attr("x", 0); else lab.attr("x", labW).attr("text-anchor", "end");
-      const top = r.top, rest = r.v.length - top;
-      if (top) svg.append("rect").attr("x", x0).attr("width", Math.max(2, x(top) - x0 - (rest ? 2 : 0))).attr("y", yc - 6).attr("height", 12).attr("rx", 3).attr("fill", "var(--s-blue)");
-      if (rest) svg.append("rect").attr("x", x(top)).attr("width", Math.max(2, x(top + rest) - x(top))).attr("y", yc - 6).attr("height", 12).attr("rx", 3).attr("fill", "var(--ramp-1)");
-      svg.append("text").attr("class", "c-val").attr("x", x(r.v.length) + 6).attr("y", yc).attr("dy", "0.32em").text(r.v.length);
-      svg.append("rect").attr("x", 0).attr("y", i * rowH).attr("width", W).attr("height", rowH).attr("fill", "transparent")
-        .on("pointermove pointerdown", (ev) => showTip(ev, [["tt", r.g], ["tn", `${r.v.length} albums · ${top} in the top 25 · avg ${d3.mean(r.v, (a) => a.stars[s]).toFixed(2)} stars`],
-          ...r.v.slice(0, 8).map((a) => ["ts", `#${a.ranks[s]} ${a.album} · ${a.artist}${r.other ? ` (${a.genre || "untagged"})` : ""}`]),
-          ...(r.v.length > 8 ? [["ts", `and ${r.v.length - 8} more`]] : [])]))
-        .on("pointerleave", hideTip);
+    [[x0, fmtDate(p)], [x1, fmtDate(s)]].forEach(([xx, t]) => {
+      svg.append("line").attr("class", "c-axis").attr("x1", xx).attr("x2", xx).attr("y1", m.top - 8).attr("y2", H - m.bottom);
+      svg.append("text").attr("class", "c-tick").attr("x", xx).attr("y", 12).attr("text-anchor", "middle").attr("font-weight", 600).text(t);
+    });
+    const col = (id) => (hl.get(id) === "up" ? UP : hl.get(id) === "down" ? DOWN : null);
+    const ordered = [...both].sort((u, v) => (hl.has(u.a.id) - hl.has(v.a.id)));
+    const g = svg.append("g");
+    const lines = g.selectAll("g").data(ordered).join("g").attr("class", (d) => "slope" + (hl.has(d.a.id) ? " hl" : ""));
+    lines.append("line").attr("x1", x0).attr("x2", x1).attr("y1", (d) => y(d.r0)).attr("y2", (d) => y(d.r1))
+      .attr("stroke", (d) => col(d.a.id) || "var(--axis)").attr("stroke-width", (d) => (hl.has(d.a.id) ? 2.5 : 1.2)).attr("stroke-linecap", "round");
+    lines.filter((d) => hl.has(d.a.id)).each(function (d) {
+      const gg = d3.select(this);
+      [[x0, d.r0], [x1, d.r1]].forEach(([xx, r]) => gg.append("circle").attr("cx", xx).attr("cy", y(r)).attr("r", 4).attr("fill", col(d.a.id)).attr("stroke", "var(--surface)").attr("stroke-width", 1.5));
+    });
+    // new entries: hollow rings on the right axis
+    debs.forEach((a) => svg.append("circle").attr("cx", x1).attr("cy", y(a.ranks[s])).attr("r", 3.5).attr("fill", "var(--surface)").attr("stroke", "var(--ink)").attr("stroke-width", 1.5));
+
+    // labels: start rank on the left, name and move on the right
+    const hls = [...ups, ...downs];
+    relax(hls.map((x) => ({ x, y0: y(x.r0) })), 13, m.top, H - m.bottom).forEach(({ x, y: yy }) => {
+      svg.append("text").attr("class", "c-val").attr("x", x0 - 8).attr("y", yy).attr("dy", "0.32em").attr("text-anchor", "end").text("#" + x.r0);
+    });
+    relax(hls.map((x) => ({ x, y0: y(x.r1) })), 14, m.top, H - m.bottom).forEach(({ x, y0, y: yy }) => {
+      svg.append("path").attr("d", `M${x1 + 5},${y0} L${x1 + 9},${y0} L${x1 + 12},${yy}`).attr("fill", "none").attr("stroke", "var(--axis)");
+      const t = svg.append("text").attr("class", "c-lab").attr("x", x1 + 15).attr("y", yy).attr("dy", "0.32em");
+      t.append("tspan").attr("font-weight", 600).attr("fill", col(x.a.id)).text(`${x.d > 0 ? "+" : "−"}${Math.abs(x.d)} `);
+      t.append("tspan").attr("font-weight", 600).text(`#${x.r1} `);
+      const nm = t.append("tspan").text(x.a.album);
+      while (t.node().getComputedTextLength() > m.right - 18 && nm.text().length > 3) nm.text(nm.text().slice(0, -2).trimEnd() + "…");
+    });
+
+    // hover any line
+    const hit = svg.append("g");
+    both.forEach((d) => {
+      hit.append("line").attr("x1", x0).attr("x2", x1).attr("y1", y(d.r0)).attr("y2", y(d.r1)).attr("stroke", "transparent").attr("stroke-width", 9)
+        .on("pointermove pointerdown", (ev) => {
+          lines.classed("dimmed", (q) => q.a.id !== d.a.id).classed("focus", (q) => q.a.id === d.a.id);
+          showTip(ev, albumTip(d.a, [["tn", `#${d.r0} on ${fmtDate(p)} → #${d.r1} on ${fmtDate(s)}`],
+            ["ts", d.d ? `${d.d > 0 ? "Passed" : "Passed by"} ${Math.abs(d.d)} album${Math.abs(d.d) === 1 ? "" : "s"} already on the list` : "Held its place among albums already on the list"]]));
+        })
+        .on("pointerleave", () => { lines.classed("dimmed", false).classed("focus", false); hideTip(); });
     });
   }
 
@@ -545,7 +495,7 @@
     const L = S.data.excitementLabels;
     const items = S.data.unrated.map((id) => S.byId.get(id));
     const lastExport = S.data.exports[S.data.exports.length - 1];
-    $("queue-sub").textContent = `${items.length} releases from ${S.data.year} catalogued on RYM but not rated yet (as of the ${fmtDate(lastExport)} export), grouped by how excited I am about them.`;
+    $("queue-sub").textContent = `${items.length} releases from ${S.data.year} I've saved on RYM but haven't rated yet (as of ${fmtDate(lastExport)}), grouped by how excited I am about them.`;
     const order = (a, b) => ((b.affinity?.avg ?? -1) - (a.affinity?.avg ?? -1)) || a.artist.localeCompare(b.artist);
     const groups = [[3, L["3"]], [2, L["2"]], [1, L["1"]], [null, "Not tagged yet"]];
     $("queue-list").replaceChildren(...groups.map(([lvl, name]) => {
@@ -565,7 +515,7 @@
           p.append(document.createTextNode("Artist avg "), h("strong", null, `${af.avg.toFixed(1)}★`), document.createTextNode(` over ${af.n} release${af.n === 1 ? "" : "s"}${best ? ` · best: ${best.album} (${fmtStars(best.stars)})` : ""}`));
           body.append(p);
         }
-        const seen = h("div", "seen"); seen.append(document.createTextNode(`Catalogued by ${fmtDate(a.firstSeen)}`));
+        const seen = h("div", "seen"); seen.append(document.createTextNode(`Saved by ${fmtDate(a.firstSeen)}`));
         if (a.wasRanked) seen.append(h("span", "badge", "Rating removed"));
         body.append(seen);
         card.append(cover(a), body);
@@ -583,8 +533,34 @@
     $(id).addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; S[key] = b.dataset.v; press(id, S[key]); after(); });
   }
   wireSeg("bump-scope", "bump", renderBump);
-  wireSeg("f-artsy", "artsy", renderTable);
-  wireSeg("f-aggr", "aggr", renderTable);
+  // vibe pills cycle: any -> only albums with it -> only albums without it
+  const NEXT = { any: "yes", yes: "no", no: "any" };
+  const PILL = { artsy: ["f-artsy", "artsy", "Artsy"], aggr: ["f-aggr", "aggr", "Aggressive"] };
+  function renderPills() {
+    Object.values(PILL).forEach(([id, key, label]) => {
+      const b = $(id), st = S[key];
+      b.dataset.state = st;
+      const word = st === "yes" ? "only" : st === "no" ? "none" : "any";
+      b.replaceChildren(h("span", "dot " + (key === "aggr" ? "aggr" : "artsy")), h("span", "vp-l", label), h("span", "vp-s", word));
+      b.setAttribute("aria-label", `${label}: ${st === "yes" ? `only ${label.toLowerCase()} albums` : st === "no" ? `hide ${label.toLowerCase()} albums` : "no filter"}. Click to change.`);
+    });
+    const parts = [];
+    if (S.artsy !== "any") parts.push(S.artsy === "yes" ? "artsy" : "not artsy");
+    if (S.aggr !== "any") parts.push(S.aggr === "yes" ? "aggressive" : "not aggressive");
+    $("vf-hint").textContent = parts.length ? `Showing ${parts.join(", ")} albums.` : "Tap a vibe to require it, tap again to exclude it.";
+  }
+  Object.values(PILL).forEach(([id, key]) => $(id).addEventListener("click", () => { S[key] = NEXT[S[key]]; renderTable(); }));
+  function renderBadgeKey() {
+    const items = [
+      [moveBadge({ kind: "up", d: 3 }), "places climbed since the last update"],
+      [moveBadge({ kind: "down", d: 2 }), "places dropped"],
+      [moveBadge({ kind: "new" }), "on the list for the first time"],
+      [moveBadge({ kind: "back" }), "returned after dropping off"],
+      ...Object.entries(HEAT).map(([name, [, , desc]]) => [heatBadge(name), desc.charAt(0).toLowerCase() + desc.slice(1)]),
+    ];
+    $("badge-key").replaceChildren(...items.map(([b, t]) => { const r = h("div", "bk"); r.append(b, h("span", null, t)); return r; }));
+  }
+  renderBadgeKey();
   $("q").addEventListener("input", (e) => { S.q = e.target.value; renderTable(); });
   $("snap").addEventListener("change", (e) => setSnap(+e.target.value));
   $("snap-prev").addEventListener("click", () => setSnap(S.si - 1));
@@ -602,12 +578,12 @@
   }
 
   function renderAll() {
-    renderHero(); renderTop10(); renderTopster(); renderBump(); renderTable(); renderVibes(); renderMovers(); renderLedger(); renderGenres(); renderQueue();
-    $("foot").textContent = `Data built ${S.data.built.replace("T", " ").replace("+00:00", " UTC")} · ${S.data.exports.length} RYM exports · ${S.snaps.length} ranking snapshots.`;
+    renderHero(); renderTop10(); renderTopster(); renderBump(); renderTable(); renderMovers(); renderQueue();
+    $("foot").textContent = `Last updated ${fmtLong(S.snaps[S.snaps.length - 1])} · site built ${S.data.built.slice(0, 10)}.`;
   }
 
   let lastW = innerWidth;
-  addEventListener("resize", () => { if (Math.abs(innerWidth - lastW) < 4) return; lastW = innerWidth; if (S.data) { renderBump(); renderMovers(); renderGenres(); } });
+  addEventListener("resize", () => { if (Math.abs(innerWidth - lastW) < 4) return; lastW = innerWidth; if (S.data) { renderBump(); renderMovers(); } });
 
   async function load(year) {
     const res = await fetch(`data/${year}.json`, { cache: "no-cache" });
@@ -615,13 +591,13 @@
     S.byId = new Map(S.data.albums.map((a) => [a.id, a]));
     relCache.clear();
     S.snaps = S.data.snapshots;
-    $("snap").replaceChildren(...S.snaps.map((s, i) => new Option(`${fmtDate(s)}, ${s.slice(0, 4)}`, String(i))));
+    $("snap").replaceChildren(...S.snaps.map((s, i) => new Option(`${fmtLong(s)}${i === S.snaps.length - 1 ? " (latest)" : ""}`, String(i))));
     const want = S.snaps.indexOf(qs.get("snap"));
     setSnap(want >= 0 ? want : S.snaps.length - 1);
   }
 
   async function init() {
-    press("bump-scope", S.bump); press("f-artsy", S.artsy); press("f-aggr", S.aggr);
+    press("bump-scope", S.bump);
     let years = [];
     try { years = (await (await fetch("data/index.json", { cache: "no-cache" })).json()).years; } catch (e) { /* fall through */ }
     if (!years.length) { $("lede").textContent = "No data yet. Run python tools/build.py."; return; }
