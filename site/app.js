@@ -95,8 +95,6 @@
     if (r == null) return null;
     const di = debutIdx(a);
     if (i - di <= 1 && r <= 10) return "Hot debut";
-    const span = S.snaps.slice(di, i + 1);
-    if (span.length >= 4 && span.every((x) => a.ranks[x] != null && a.ranks[x] <= 10)) return "Staple";
     return null;
   }
   function moveBadge(m) {
@@ -109,7 +107,6 @@
   }
   const HEAT = {
     "Hot debut": ["hot", "✦", "Arrived in the last two updates and went straight to the top 10"],
-    "Staple": ["staple", "◆", "Top 10 in every update since it arrived (at least four)"],
   };
   function heatBadge(name) {
     const [cls, icon] = HEAT[name];
@@ -186,8 +183,9 @@
     document.title = `Best Albums of ${S.data.year}`;
     const latest = S.si === S.snaps.length - 1;
     $("lede").textContent = latest
-      ? `My favorite releases of ${S.data.year}, ranked. Last updated ${fmtLong(s)}.`
-      : `My favorite releases of ${S.data.year}, ranked. You're looking at the list as it stood on ${fmtLong(s)}; the latest update is ${fmtLong(S.snaps[S.snaps.length - 1])}.`;
+      ? `Last updated ${fmtLong(s)}.`
+      : `You're looking at the list as it stood on ${fmtLong(s)}. The latest update is ${fmtLong(S.snaps[S.snaps.length - 1])}.`;
+    $("intro").textContent = `I'm ranking my favorite albums of ${S.data.year}, aided by star ratings applied to albums (out of 5) on Rate Your Music. I'll be re-evaluating albums as I go, and updating this several times throughout the year. ${latest ? "Here's the latest." : "This is an earlier version."}`;
     const n1 = $("n1"); n1.replaceChildren();
     if (a) {
       const right = h("div");
@@ -246,7 +244,8 @@
   // ---------- topster ----------
   function renderTopster() {
     const s = snap(), list = ranked().slice(0, 25);
-    $("topster").replaceChildren(...list.map((a) => {
+    $("grid-sub").textContent = `Bigger covers rank higher. ${matchMedia("(hover: hover)").matches ? "Hover" : "Tap"} a cover for the title and artist.`;
+    const cells = list.map((a) => {
       const cell = h("div", "topster-cell");
       const info = h("div", "ts-info");
       const st = h("div", "ts-stars");
@@ -262,7 +261,14 @@
       cell.setAttribute("aria-label", `#${a.ranks[s]} ${a.album} by ${a.artist}`);
       bindTip(cell, () => [["tt", a.album], ["ts", a.artist]].concat(a.released ? [["ts", `Released ${fmtRel(a)}`]] : []));
       return cell;
-    }));
+    });
+    const rows = [];
+    for (let n = 3, k = 0; k < cells.length; k += n, n++) {
+      const row = h("div", "ts-row"); row.style.setProperty("--n", n);
+      row.append(...cells.slice(k, k + n));
+      rows.push(row);
+    }
+    $("topster").replaceChildren(...rows);
     $("topster-legend").replaceChildren(...list.map((a) => {
       const sp = h("span"); sp.append(h("b", null, String(a.ranks[s])), document.createTextNode(`${a.artist} – ${a.album}`)); sp.title = `${a.artist} – ${a.album}`; return sp;
     }));
@@ -399,91 +405,6 @@
     if (!rows.length) { const tr = h("tr"); const c = h("td", "empty", "Nothing matches these filters."); c.colSpan = 8; tr.append(c); body.append(tr); }
   }
 
-  // ---------- movers: slope chart ----------
-  function relax(items, gap, lo, hi) {
-    items.sort((p, q) => p.y0 - q.y0);
-    items.forEach((it, k) => { it.y = k ? Math.max(it.y0, items[k - 1].y + gap) : Math.max(lo, it.y0); });
-    const over = items.length ? items[items.length - 1].y - hi : 0;
-    if (over > 0) for (let k = items.length - 1; k >= 0; k--) { const lim = k === items.length - 1 ? hi : items[k + 1].y - gap; if (items[k].y > lim) items[k].y = lim; }
-    return items;
-  }
-  function renderMovers() {
-    const s = snap(), p = prevSnap(), box = $("movers-chart");
-    $("movers-sub").textContent = p ? `What changed between the ${fmtDate(p)} and ${fmtDate(s)} updates.` : "This is the first update of the year, so there's nothing to compare yet.";
-    const UP = "var(--s-blue)", DOWN = "var(--s-red)";
-    $("movers-legend").replaceChildren(...[[UP, "Climbed"], [DOWN, "Fell"], ["var(--axis)", "Everyone else"]].map(([c, t]) => {
-      const k = h("span", "k"); const ln = h("span", "ln"); ln.style.background = c; k.append(ln, document.createTextNode(t)); return k;
-    }), (() => { const k = h("span", "k"); const o = h("span", "ring"); k.append(o, document.createTextNode("New entry")); return k; })());
-
-    const debs = ranked().filter((a) => move(a)?.kind === "new");
-    $("debuts").replaceChildren(...(debs.length ? debs.map((a) => {
-      const row = h("div", "debut");
-      const nm = h("div", "nm"); nm.append(h("b", null, a.album), h("span", null, `${a.artist} · ${fmtStars(a.stars[s])} stars`));
-      const c = cover(a, true); bindTip(c, () => albumTip(a));
-      const hb = heat(a);
-      row.append(h("div", "at", "#" + a.ranks[s]), c, nm, hb ? heatBadge(hb) : h("span"));
-      return row;
-    }) : [h("p", "empty", p ? "No new albums this time." : "Everything is new in the first update.")]));
-
-    const W = Math.floor(box.clientWidth);
-    if (!W) return;
-    if (!p) { box.replaceChildren(h("p", "empty", "Nothing to compare yet.")); return; }
-    const both = ranked().filter((a) => a.ranks[p] != null).map((a) => ({ a, d: relMove(a, S.si - 1, S.si), r0: a.ranks[p], r1: a.ranks[s] }));
-    const ups = both.filter((x) => x.d > 0).sort((u, v) => v.d - u.d).slice(0, 6);
-    const downs = both.filter((x) => x.d < 0).sort((u, v) => u.d - v.d).slice(0, 6);
-    const hl = new Map([...ups.map((x) => [x.a.id, "up"]), ...downs.map((x) => [x.a.id, "down"])]);
-    const narrow = W < 560;
-    const m = { top: 30, bottom: 12, left: 44, right: narrow ? 128 : 250 };
-    const maxR = Math.max(S.data.snapshotSizes[p], S.data.snapshotSizes[s]);
-    const H = Math.max(380, Math.min(maxR * 9, 760)) + m.top + m.bottom;
-    const x0 = m.left, x1 = W - m.right;
-    const y = d3.scaleLinear([1, maxR], [m.top, H - m.bottom]);
-    const svg = d3.create("svg").attr("width", "100%").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img").attr("aria-label", "Slope chart of rank changes since the previous update");
-    box.replaceChildren(svg.node());
-    [[x0, fmtDate(p)], [x1, fmtDate(s)]].forEach(([xx, t]) => {
-      svg.append("line").attr("class", "c-axis").attr("x1", xx).attr("x2", xx).attr("y1", m.top - 8).attr("y2", H - m.bottom);
-      svg.append("text").attr("class", "c-tick").attr("x", xx).attr("y", 12).attr("text-anchor", "middle").attr("font-weight", 600).text(t);
-    });
-    const col = (id) => (hl.get(id) === "up" ? UP : hl.get(id) === "down" ? DOWN : null);
-    const ordered = [...both].sort((u, v) => (hl.has(u.a.id) - hl.has(v.a.id)));
-    const g = svg.append("g");
-    const lines = g.selectAll("g").data(ordered).join("g").attr("class", (d) => "slope" + (hl.has(d.a.id) ? " hl" : ""));
-    lines.append("line").attr("x1", x0).attr("x2", x1).attr("y1", (d) => y(d.r0)).attr("y2", (d) => y(d.r1))
-      .attr("stroke", (d) => col(d.a.id) || "var(--axis)").attr("stroke-width", (d) => (hl.has(d.a.id) ? 2.5 : 1.2)).attr("stroke-linecap", "round");
-    lines.filter((d) => hl.has(d.a.id)).each(function (d) {
-      const gg = d3.select(this);
-      [[x0, d.r0], [x1, d.r1]].forEach(([xx, r]) => gg.append("circle").attr("cx", xx).attr("cy", y(r)).attr("r", 4).attr("fill", col(d.a.id)).attr("stroke", "var(--surface)").attr("stroke-width", 1.5));
-    });
-    // new entries: hollow rings on the right axis
-    debs.forEach((a) => svg.append("circle").attr("cx", x1).attr("cy", y(a.ranks[s])).attr("r", 3.5).attr("fill", "var(--surface)").attr("stroke", "var(--ink)").attr("stroke-width", 1.5));
-
-    // labels: start rank on the left, name and move on the right
-    const hls = [...ups, ...downs];
-    relax(hls.map((x) => ({ x, y0: y(x.r0) })), 13, m.top, H - m.bottom).forEach(({ x, y: yy }) => {
-      svg.append("text").attr("class", "c-val").attr("x", x0 - 8).attr("y", yy).attr("dy", "0.32em").attr("text-anchor", "end").text("#" + x.r0);
-    });
-    relax(hls.map((x) => ({ x, y0: y(x.r1) })), 14, m.top, H - m.bottom).forEach(({ x, y0, y: yy }) => {
-      svg.append("path").attr("d", `M${x1 + 5},${y0} L${x1 + 9},${y0} L${x1 + 12},${yy}`).attr("fill", "none").attr("stroke", "var(--axis)");
-      const t = svg.append("text").attr("class", "c-lab").attr("x", x1 + 15).attr("y", yy).attr("dy", "0.32em");
-      t.append("tspan").attr("font-weight", 600).attr("fill", col(x.a.id)).text(`${x.d > 0 ? "+" : "−"}${Math.abs(x.d)} `);
-      t.append("tspan").attr("font-weight", 600).text(`#${x.r1} `);
-      const nm = t.append("tspan").text(x.a.album);
-      while (t.node().getComputedTextLength() > m.right - 18 && nm.text().length > 3) nm.text(nm.text().slice(0, -2).trimEnd() + "…");
-    });
-
-    // hover any line
-    const hit = svg.append("g");
-    both.forEach((d) => {
-      hit.append("line").attr("x1", x0).attr("x2", x1).attr("y1", y(d.r0)).attr("y2", y(d.r1)).attr("stroke", "transparent").attr("stroke-width", 9)
-        .on("pointermove pointerdown", (ev) => {
-          lines.classed("dimmed", (q) => q.a.id !== d.a.id).classed("focus", (q) => q.a.id === d.a.id);
-          showTip(ev, albumTip(d.a, [["tn", `#${d.r0} on ${fmtDate(p)} → #${d.r1} on ${fmtDate(s)}`],
-            ["ts", d.d ? `${d.d > 0 ? "Passed" : "Passed by"} ${Math.abs(d.d)} album${Math.abs(d.d) === 1 ? "" : "s"} already on the list` : "Held its place among albums already on the list"]]));
-        })
-        .on("pointerleave", () => { lines.classed("dimmed", false).classed("focus", false); hideTip(); });
-    });
-  }
-
   // ---------- queue ----------
   function renderQueue() {
     const L = S.data.excitementLabels;
@@ -563,12 +484,12 @@
   }
 
   function renderAll() {
-    renderHero(); renderTop10(); renderTopster(); renderBump(); renderTable(); renderMovers(); renderQueue();
+    renderHero(); renderTop10(); renderTopster(); renderBump(); renderTable(); renderQueue();
     $("foot").textContent = `Last updated ${fmtLong(S.snaps[S.snaps.length - 1])} · site built ${S.data.built.slice(0, 10)}.`;
   }
 
   let lastW = innerWidth;
-  addEventListener("resize", () => { if (Math.abs(innerWidth - lastW) < 4) return; lastW = innerWidth; if (S.data) { renderBump(); renderMovers(); } });
+  addEventListener("resize", () => { if (Math.abs(innerWidth - lastW) < 4) return; lastW = innerWidth; if (S.data) { renderBump(); renderTopster(); } });
 
   async function load(year) {
     const res = await fetch(`data/${year}.json`, { cache: "no-cache" });
