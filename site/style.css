@@ -14,6 +14,9 @@
   --s-orange: #eb6834;
   --s-red: #e34948;
   --s-violet: #6250d6;
+  --s-magenta: #e87ba4;
+  --v-artsy: #1baf7a;
+  --v-aggr: #eda100;
   --ramp-1: #86b6ef; --ramp-2: #5598e7; --ramp-3: #2a78d6; --ramp-4: #1c5cab; --ramp-5: #104281;
   --ramp-ink-1: #0b0b0b; --ramp-ink-2: #0b0b0b; --ramp-ink-3: #ffffff; --ramp-ink-4: #ffffff; --ramp-ink-5: #ffffff;
   --shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.06);
@@ -27,7 +30,7 @@
     --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242423;
     --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --line: rgba(255,255,255,0.10);
-    --s-blue: #3987e5; --s-orange: #d95926; --s-red: #e66767; --s-violet: #9085e9;
+    --s-blue: #3987e5; --s-orange: #d95926; --s-red: #e66767; --s-violet: #9085e9; --s-magenta: #d55181; --v-artsy: #199e70; --v-aggr: #c98500;
     --ramp-1: #184f95; --ramp-2: #256abf; --ramp-3: #3987e5; --ramp-4: #6da7ec; --ramp-5: #b7d3f6;
     --ramp-ink-1: #ffffff; --ramp-ink-2: #ffffff; --ramp-ink-3: #ffffff; --ramp-ink-4: #0b0b0b; --ramp-ink-5: #0b0b0b;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
@@ -38,7 +41,7 @@
   --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242423;
   --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --line: rgba(255,255,255,0.10);
-  --s-blue: #3987e5; --s-orange: #d95926; --s-red: #e66767; --s-violet: #9085e9;
+  --s-blue: #3987e5; --s-orange: #d95926; --s-red: #e66767; --s-violet: #9085e9; --s-magenta: #d55181; --v-artsy: #199e70; --v-aggr: #c98500;
   --ramp-1: #184f95; --ramp-2: #256abf; --ramp-3: #3987e5; --ramp-4: #6da7ec; --ramp-5: #b7d3f6;
   --ramp-ink-1: #ffffff; --ramp-ink-2: #ffffff; --ramp-ink-3: #ffffff; --ramp-ink-4: #0b0b0b; --ramp-ink-5: #0b0b0b;
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
@@ -126,8 +129,8 @@ h2 { font-family: var(--serif); font-weight: 400; font-size: clamp(26px, 3.4vw, 
 /* ---------- chips, badges, stars ---------- */
 .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 8px 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); white-space: nowrap; line-height: 20px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.dot.artsy { background: var(--s-blue); }
-.dot.aggr { background: var(--s-orange); }
+.dot.artsy { background: var(--v-artsy); }
+.dot.aggr { background: var(--v-aggr); }
 .genre { color: var(--ink-2); font-size: 13px; }
 .badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; line-height: 18px; font-variant-numeric: tabular-nums; border: 1px solid var(--line); color: var(--ink); }
 .badge.up { color: var(--s-blue); }
@@ -137,14 +140,10 @@ h2 { font-family: var(--serif); font-weight: 400; font-size: clamp(26px, 3.4vw, 
 .badge.back { color: var(--ink-2); border-style: dashed; }
 .badge.heat { font-weight: 600; color: var(--ink); gap: 4px; }
 .badge.heat .bi { font-size: 11px; line-height: 1; }
-.badge.hot { background: color-mix(in srgb, var(--s-orange) 18%, transparent); border-color: color-mix(in srgb, var(--s-orange) 55%, transparent); }
-.badge.hot .bi { color: var(--s-orange); }
-.badge.surge { background: color-mix(in srgb, var(--s-blue) 14%, transparent); border-color: color-mix(in srgb, var(--s-blue) 50%, transparent); }
-.badge.surge .bi { color: var(--s-blue); }
-.badge.slip { background: color-mix(in srgb, var(--s-red) 12%, transparent); border-color: color-mix(in srgb, var(--s-red) 45%, transparent); }
-.badge.slip .bi { color: var(--s-red); }
-.badge.staple { background: color-mix(in srgb, var(--s-violet) 14%, transparent); border-color: color-mix(in srgb, var(--s-violet) 50%, transparent); }
-.badge.staple .bi { color: var(--s-violet); }
+.badge.hot { background: color-mix(in srgb, var(--s-magenta) 20%, transparent); border-color: color-mix(in srgb, var(--s-magenta) 70%, transparent); }
+.badge.hot .bi { color: var(--s-magenta); }
+.badge.staple { background: var(--surface-2); border-color: var(--axis); }
+.badge.staple .bi { color: var(--ink); }
 .stars { position: relative; display: inline-block; font-size: 13px; letter-spacing: 1px; line-height: 1; white-space: nowrap; color: var(--grid); vertical-align: -1px; }
 .stars::before { content: "★★★★★"; }
 .stars > span { position: absolute; inset: 0 auto 0 0; overflow: hidden; color: var(--ink); }
@@ -305,10 +304,10 @@ details.about code { font-size: 13px; background: var(--surface-2); padding: 1px
 .vpill .dot { width: 10px; height: 10px; transition: box-shadow .15s; }
 .vpill .vp-s { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: 2px 7px; }
 .vpill:hover { border-color: var(--axis); }
-.vpill[data-state="yes"][data-kind="artsy"] { border-color: var(--s-blue); background: color-mix(in srgb, var(--s-blue) 12%, var(--surface)); }
-.vpill[data-state="yes"][data-kind="aggr"] { border-color: var(--s-orange); background: color-mix(in srgb, var(--s-orange) 12%, var(--surface)); }
-.vpill[data-state="yes"][data-kind="artsy"] .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--s-blue) 28%, transparent); }
-.vpill[data-state="yes"][data-kind="aggr"] .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--s-orange) 28%, transparent); }
+.vpill[data-state="yes"][data-kind="artsy"] { border-color: var(--v-artsy); background: color-mix(in srgb, var(--v-artsy) 14%, var(--surface)); }
+.vpill[data-state="yes"][data-kind="aggr"] { border-color: var(--v-aggr); background: color-mix(in srgb, var(--v-aggr) 14%, var(--surface)); }
+.vpill[data-state="yes"][data-kind="artsy"] .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--v-artsy) 30%, transparent); }
+.vpill[data-state="yes"][data-kind="aggr"] .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--v-aggr) 30%, transparent); }
 .vpill[data-state="yes"] .vp-s { background: var(--ink); color: var(--page); }
 .vpill[data-state="no"] { border-style: dashed; color: var(--muted); }
 .vpill[data-state="no"] .vp-l { text-decoration: line-through; }

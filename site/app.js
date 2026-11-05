@@ -64,12 +64,14 @@
   const ranked = (s = snap()) => S.data.albums.filter((a) => a.ranks[s] != null).sort((x, y) => x.ranks[s] - y.ranks[s]);
   const debutIdx = (a) => S.snaps.findIndex((s) => a.ranks[s] != null);
 
+  const MOVE_MIN = 5;  // a move badge shows only for more than this many places
   function move(a, i = S.si) {
     const s = S.snaps[i], p = i > 0 ? S.snaps[i - 1] : null;
     if (a.ranks[s] == null || !p) return null;
     if (a.ranks[p] == null) return debutIdx(a) === i ? { kind: "new" } : null;  // a return shouldn't happen (ratings aren't removed)
-    const d = a.ranks[p] - a.ranks[s];
-    return { kind: d > 0 ? "up" : d < 0 ? "down" : "flat", d };
+    // real reordering only (new arrivals landing above don't count), and only big moves
+    const d = relMove(a, i - 1, i) ?? 0;
+    return { kind: d > MOVE_MIN ? "up" : d < -MOVE_MIN ? "down" : "flat", d };
   }
   // Places gained among albums ranked in BOTH updates: strips out the push-down
   // effect of new entries. Returns null if the album isn't in both.
@@ -93,30 +95,20 @@
     if (r == null) return null;
     const di = debutIdx(a);
     if (i - di <= 1 && r <= 10) return "Hot debut";
-    // Surging / Slipping use real reordering only (new entries landing above don't count),
-    // and the latest step must point the same way.
-    const from = Math.max(di, i - 2);
-    if (from < i) {
-      const d = relMove(a, from, i), last = relMove(a, i - 1, i);
-      if (d != null && d >= 5 && (last ?? 0) >= 0) return "Surging";
-      if (d != null && d <= -5 && (last ?? 0) <= 0) return "Slipping";
-    }
     const span = S.snaps.slice(di, i + 1);
     if (span.length >= 4 && span.every((x) => a.ranks[x] != null && a.ranks[x] <= 10)) return "Staple";
     return null;
   }
   function moveBadge(m) {
-    if (!m) return h("span", "badge flat", "·");
+    if (!m) return h("span");
     if (m.kind === "new") return h("span", "badge new", "New");
-    if (m.kind === "flat") return h("span", "badge flat", "–");
+    if (m.kind === "flat") return h("span");
     const b = h("span", "badge " + m.kind, (m.kind === "up" ? "▲" : "▼") + Math.abs(m.d));
     b.setAttribute("aria-label", `${m.kind === "up" ? "up" : "down"} ${Math.abs(m.d)} places`);
     return b;
   }
   const HEAT = {
     "Hot debut": ["hot", "✦", "Arrived in the last two updates and went straight to the top 10"],
-    "Surging": ["surge", "↗", "Passed 5+ albums that were already on the list over the last three updates"],
-    "Slipping": ["slip", "↘", "Passed by 5+ albums that were already on the list over the last three updates"],
     "Staple": ["staple", "◆", "Top 10 in every update since it arrived (at least four)"],
   };
   function heatBadge(name) {
@@ -546,8 +538,8 @@
   Object.values(PILL).forEach(([id, key]) => $(id).addEventListener("click", () => { S[key] = NEXT[S[key]]; renderTable(); }));
   function renderBadgeKey() {
     const items = [
-      [moveBadge({ kind: "up", d: 3 }), "places climbed since the last update"],
-      [moveBadge({ kind: "down", d: 2 }), "places dropped"],
+      [moveBadge({ kind: "up", d: 7 }), "climbed more than 5 places since the last update"],
+      [moveBadge({ kind: "down", d: 6 }), "dropped more than 5 places"],
       [moveBadge({ kind: "new" }), "on the list for the first time"],
       ...Object.entries(HEAT).map(([name, [, , desc]]) => [heatBadge(name), desc.charAt(0).toLowerCase() + desc.slice(1)]),
     ];
