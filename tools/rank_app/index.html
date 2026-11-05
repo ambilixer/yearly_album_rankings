@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ranking update</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand">Ranking update <span id="year-label"></span></div>
+    <div class="bar-ctl" id="bar-ctl" hidden>
+      <label class="date-f">Ranking date <input type="date" id="date"></label>
+      <span class="status" id="status"></span>
+      <button class="btn" id="discard" type="button">Start over</button>
+      <button class="btn primary" id="save" type="button">Save ranking</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- start screen -->
+  <section id="start" hidden>
+    <h1>New ranking</h1>
+    <p class="lede">Drop in a fresh Rate Your Music export. I'll keep your last ranking's order, slot new albums into their star tier, and you take it from there.</p>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".csv,text/csv" hidden>
+      <span class="drop-big">Drop your RYM export here</span>
+      <span class="drop-small">or click to choose the .csv file</span>
+    </label>
+    <p class="or" id="or-existing"></p>
+    <p class="err" id="start-err" hidden></p>
+  </section>
+
+  <!-- editor -->
+  <section id="editor" hidden>
+    <div class="summary" id="summary"></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" id="tab-rank" role="tab" type="button" aria-selected="true">Ranking</button>
+      <button class="tab" id="tab-queue" role="tab" type="button" aria-selected="false">Queue</button>
+    </div>
+    <div id="pane-rank">
+      <p class="hint">Drag the handle (or use ↑ ↓) to reorder within a star tier. Changing an album's stars moves it to the bottom of a higher tier, or the top of a lower one. Choose "Unrated" to send it back to the queue.</p>
+      <div id="tiers"></div>
+    </div>
+    <div id="pane-queue" hidden>
+      <p class="hint">Saved on RYM but not rated yet. Set how excited you are about each, or give one stars here to add it to the ranking.</p>
+      <div id="queue"></div>
+    </div>
+  </section>
+
+  <!-- after saving -->
+  <section id="done" hidden>
+    <h1>Saved</h1>
+    <p class="lede" id="done-msg"></p>
+    <div class="done-actions">
+      <a class="btn" href="/site/index.html" target="_blank" rel="noopener">Preview the dashboard</a>
+      <button class="btn primary" id="publish" type="button">Publish to GitHub</button>
+      <button class="btn" id="again" type="button">Start another</button>
+    </div>
+    <p class="hint">Publishing commits the new ranking and tags, and pushes them. GitHub then looks up cover art and dates for any new albums and rebuilds the site, which takes a couple of minutes.</p>
+    <pre class="log" id="log" hidden></pre>
+  </section>
+</main>
+
+<datalist id="genres"></datalist>
+<script src="app.js"></script>
+</body>
+</html>

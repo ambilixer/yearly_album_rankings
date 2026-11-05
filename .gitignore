@@ -3,3 +3,5 @@ site/data/*.json
 __pycache__/
 *.pyc
 .DS_Store
+# in-progress ranking drafts from the ranking app
+data/.draft-*.json

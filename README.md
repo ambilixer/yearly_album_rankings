@@ -6,10 +6,27 @@ My running ranking of the year's best albums, tracked snapshot by snapshot from 
 
 ## How it works
 
-1. Every few weeks I export my RYM collection and drop the CSV into `data/raw/rym/`, named by export date (`2026-10-31.csv`).
-2. I rank every rated release from the year, highest first. That snapshot is saved as `data/rankings/<year>/<date>.csv`.
-3. Genre and vibe tags live in `data/tags.csv`, one row per album, and carry over between snapshots.
-4. `tools/build.py` joins everything into `site/data/<year>.json`, which the dashboard reads.
+1. Every few weeks I export my RYM collection and rank every rated release from the year, using the ranking app below.
+2. Each ranking is saved as `data/rankings/<year>/<date>.csv`, and the export it came from as `data/raw/rym/<date>.csv`.
+3. Genre and vibe tags (and excitement for the unrated queue) live in `data/tags.csv`, one row per album, and carry over between rankings.
+4. On every push, GitHub Actions looks up cover art and release dates for new albums (`tools/enrich.py`, saved to `data/meta.csv`), then `tools/build.py` turns everything into `site/data/<year>.json` and publishes the dashboard.
+
+## The ranking app
+
+From the repo folder on your computer:
+
+```bash
+python tools/rank.py
+```
+
+It opens a page in your browser (http://localhost:8777). Then:
+
+1. **Drop in the new RYM export.** The app keeps your last ranking's order within each star tier. Stars come from RYM. An album RYM now rates higher goes to the bottom of its new tier, one rated lower to the top of its new tier, and new albums go to the bottom of theirs.
+2. **Rank and tag.** Drag (or use the arrows) to reorder within a tier. Change stars on any album; it moves tiers automatically. Fill in genre and the artsy/aggressive toggles. Rows show where each album was last time and flag stars that differ from last time or from RYM.
+3. **Queue tab.** Set excitement for unrated albums, or give one stars to add it to the ranking.
+4. **Save ranking**, check **Preview the dashboard**, then **Publish to GitHub** (commits and pushes `data/`). The live site updates a couple of minutes later.
+
+Work in progress is saved as you go, so you can close the tab and come back. No dependencies beyond Python 3.10+ and git.
 
 ### The ranking rule
 
@@ -22,7 +39,7 @@ Rank always respects stars: nothing rated 3.5 can sit above anything rated 4.0. 
 | `data/raw/rym/<date>.csv` | RYM export, never edited | RYM's own format. `Rating` is half-stars x2 (8 = 4.0 stars); 0 means unrated |
 | `data/rankings/<year>/<date>.csv` | me | `rank, rym_id, stars, artist, album, note`. `artist`/`album` are for readability; `rym_id` is the key |
 | `data/tags.csv` | me | `rym_id, artist, album, genre, artsy, aggressive, excitement` |
-| `data/meta.csv` | enrichment (coming) | `rym_id, art_url, release_date, date_source` |
+| `data/meta.csv` | `tools/enrich.py` (in CI) | `rym_id, artist, album, art_url, release_date, date_source, match, checked, locked`. Fix a wrong match by editing the row and setting `locked` to `X` |
 
 Tag conventions:
 
@@ -54,6 +71,6 @@ The 2026 history came from a Google Sheet, migrated with `tools/migrate_xlsx.py`
 
 - [x] Migrate 2026 history
 - [x] Dashboard
-- [ ] Local ranking app: drop in a new export, auto-slot new albums into their star tier, drag to reorder, tag, save
-- [ ] Enrichment: cover art and release dates (Deezer / iTunes / MusicBrainz), RYM-ID release-date estimates, optional RYM bookmarklet
+- [x] Local ranking app
+- [x] Cover art and release dates (Deezer / iTunes / MusicBrainz), with RYM-ID estimates for the rest
 - [ ] Backfill earlier years
