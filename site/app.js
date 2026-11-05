@@ -67,7 +67,7 @@
   function move(a, i = S.si) {
     const s = S.snaps[i], p = i > 0 ? S.snaps[i - 1] : null;
     if (a.ranks[s] == null || !p) return null;
-    if (a.ranks[p] == null) return debutIdx(a) === i ? { kind: "new" } : { kind: "back" };
+    if (a.ranks[p] == null) return debutIdx(a) === i ? { kind: "new" } : null;  // a return shouldn't happen (ratings aren't removed)
     const d = a.ranks[p] - a.ranks[s];
     return { kind: d > 0 ? "up" : d < 0 ? "down" : "flat", d };
   }
@@ -108,7 +108,6 @@
   function moveBadge(m) {
     if (!m) return h("span", "badge flat", "·");
     if (m.kind === "new") return h("span", "badge new", "New");
-    if (m.kind === "back") return h("span", "badge back", "↺ Back");
     if (m.kind === "flat") return h("span", "badge flat", "–");
     const b = h("span", "badge " + m.kind, (m.kind === "up" ? "▲" : "▼") + Math.abs(m.d));
     b.setAttribute("aria-label", `${m.kind === "up" ? "up" : "down"} ${Math.abs(m.d)} places`);
@@ -235,8 +234,8 @@
       meta.append(starsEl(a.stars[s]));
       if (a.genre) meta.append(h("span", "genre", a.genre));
       meta.append(vibeChips(a));
-      if (a.released) meta.append(h("span", "genre rel", `Released ${fmtRel(a)}`));
       main.append(meta);
+      if (a.released) main.append(h("div", "t10-rel", `Released ${fmtRel(a)}`));
       const sp = h("div", "t10-spark");
       const best = d3.min(S.snaps.slice(0, S.si + 1), (x) => a.ranks[x]);
       sp.append(spark(a), h("span", "cap", `debut #${a.ranks[S.snaps[debutIdx(a)]]} ${fmtDate(S.snaps[debutIdx(a)])} · best #${best}`));
@@ -267,7 +266,6 @@
       if (a.artsy) { const v = h("span", "ts-v"); v.append(h("span", "dot artsy"), h("span", "ts-vl", "Artsy")); vibes.append(v); }
       if (a.aggressive) { const v = h("span", "ts-v"); v.append(h("span", "dot aggr"), h("span", "ts-vl", "Aggressive")); vibes.append(v); }
       if (vibes.childElementCount) info.append(vibes);
-      if (a.released) info.append(h("div", "ts-date", `Released ${fmtRel(a)}`));
       cell.append(cover(a, false, true), info, h("span", "topster-n", String(a.ranks[s])));
       cell.setAttribute("aria-label", `#${a.ranks[s]} ${a.album} by ${a.artist}`);
       bindTip(cell, () => [["tt", a.album], ["ts", a.artist]].concat(a.released ? [["ts", `Released ${fmtRel(a)}`]] : []));
@@ -425,10 +423,10 @@
       const k = h("span", "k"); const ln = h("span", "ln"); ln.style.background = c; k.append(ln, document.createTextNode(t)); return k;
     }), (() => { const k = h("span", "k"); const o = h("span", "ring"); k.append(o, document.createTextNode("New entry")); return k; })());
 
-    const debs = ranked().filter((a) => move(a)?.kind === "new" || move(a)?.kind === "back");
+    const debs = ranked().filter((a) => move(a)?.kind === "new");
     $("debuts").replaceChildren(...(debs.length ? debs.map((a) => {
       const row = h("div", "debut");
-      const nm = h("div", "nm"); nm.append(h("b", null, a.album), h("span", null, `${a.artist} · ${fmtStars(a.stars[s])} stars${move(a).kind === "back" ? " · back on the list" : ""}`));
+      const nm = h("div", "nm"); nm.append(h("b", null, a.album), h("span", null, `${a.artist} · ${fmtStars(a.stars[s])} stars`));
       const c = cover(a, true); bindTip(c, () => albumTip(a));
       const hb = heat(a);
       row.append(h("div", "at", "#" + a.ranks[s]), c, nm, hb ? heatBadge(hb) : h("span"));
@@ -500,7 +498,7 @@
     const items = S.data.unrated.map((id) => S.byId.get(id));
     const lastExport = S.data.exports[S.data.exports.length - 1];
     $("queue-sub").textContent = `${items.length} releases from ${S.data.year} I've saved on RYM but haven't rated yet (as of ${fmtDate(lastExport)}), grouped by how excited I am about them.`;
-    const order = (a, b) => ((b.affinity?.avg ?? -1) - (a.affinity?.avg ?? -1)) || a.artist.localeCompare(b.artist);
+    const order = (a, b) => (b.released || "").localeCompare(a.released || "") || a.artist.localeCompare(b.artist);
     const groups = [[3, L["3"]], [2, L["2"]], [1, L["1"]], [null, "Not tagged yet"]];
     $("queue-list").replaceChildren(...groups.map(([lvl, name]) => {
       const g = h("div", "q-group");
@@ -513,15 +511,7 @@
         const card = h("div", "q-card");
         const body = h("div");
         body.append(h("b", null, a.album), h("div", "a", a.artist));
-        const af = a.affinity;
-        if (af && af.n) {
-          const p = h("div", "aff"); const best = af.best[0];
-          p.append(document.createTextNode("Artist avg "), h("strong", null, `${af.avg.toFixed(1)}★`), document.createTextNode(` over ${af.n} release${af.n === 1 ? "" : "s"}${best ? ` · best: ${best.album} (${fmtStars(best.stars)})` : ""}`));
-          body.append(p);
-        }
-        const seen = h("div", "seen"); seen.append(document.createTextNode(`Saved by ${fmtDate(a.firstSeen)}`));
-        if (a.wasRanked) seen.append(h("span", "badge", "Rating removed"));
-        body.append(seen);
+        if (a.released) body.append(h("div", "rel", `Released ${fmtRel(a)}`));
         card.append(cover(a), body);
         grid.append(card);
       });
@@ -559,10 +549,9 @@
       [moveBadge({ kind: "up", d: 3 }), "places climbed since the last update"],
       [moveBadge({ kind: "down", d: 2 }), "places dropped"],
       [moveBadge({ kind: "new" }), "on the list for the first time"],
-      [moveBadge({ kind: "back" }), "returned after dropping off"],
       ...Object.entries(HEAT).map(([name, [, , desc]]) => [heatBadge(name), desc.charAt(0).toLowerCase() + desc.slice(1)]),
     ];
-    $("badge-key").replaceChildren(...items.map(([b, t]) => { const r = h("div", "bk"); r.append(b, h("span", null, t)); return r; }));
+    ["badge-key", "badge-key-top"].forEach((id) => $(id).replaceChildren(...items.map(([b, t]) => { const r = h("div", "bk"); r.append(b.cloneNode(true), h("span", null, t)); return r; })));
   }
   renderBadgeKey();
   $("q").addEventListener("input", (e) => { S.q = e.target.value; renderTable(); });
