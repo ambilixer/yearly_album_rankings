@@ -15,6 +15,11 @@
 - **Cover art and release dates:** looked up in GitHub Actions on every push (`tools/enrich.py` → `data/meta.csv`). 106 of 122 albums have art. Dates come from Deezer/iTunes/MusicBrainz, or are estimated from the RYM ID, shown with "~" (typical miss about 4 weeks).
 - **Ranking app:** `python tools/rank.py` from the local clone. Import export → reorder/re-star/tag → Save → Publish. Already used once, for the Nov 4 update.
 
+## Nov 10, 2026
+
+- **Duplicates:** same artist + title on RYM is treated as one album (rule in `rym.find_duplicates`, used by the app, saved drafts and `build.py`). Only case so far: @ – *Autosmile* (17140166 ranked, 17141935 dropped from the queue).
+- **Cover art in the app:** banner + "Add missing covers" walkthrough for albums the lookup couldn't find; any cover is clickable to replace. Accepts drop, paste, file, or a link (image or Bandcamp/SoundCloud page, via og:image). Saved as `site/art/<rym_id>.jpg` (max 800px), which overrides `meta.csv`. Kept out of `meta.csv` on purpose so publishes don't conflict with CI's meta commits.
+
 ## Decisions to remember
 
 - **Rank respects stars.** No lower-rated album above a higher-rated one. `build.py` blocks deploys that break this.
@@ -28,8 +33,7 @@
 ## Next up
 
 1. **Mobile pass.** Charlie reviews the site on a phone and sends feedback.
-2. **Fix covers and dates by hand** in `data/meta.csv`: paste `art_url` / `release_date`, set `locked` = `X`.
-   - About 16 albums have no art yet (mostly SoundCloud/Bandcamp-only releases).
+2. **Fix covers and dates by hand.** Covers: use the app's "Add missing covers" (15 still missing as of Nov 10). Dates: in `data/meta.csv`, paste `release_date` and set `locked` = `X`.
    - Friko's date may be from an "Expanded Edition" reissue.
    - icewings and Liam Aldous are dated Jan 1, which may be a placeholder.
 3. **Stars default in the app.** If re-rating mostly happens while ranking rather than on RYM, switch the default to the last ranking's stars.

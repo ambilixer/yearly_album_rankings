@@ -67,6 +67,35 @@
   </section>
 </main>
 
+<dialog class="art-dlg" id="art-dlg" aria-labelledby="art-title">
+  <div class="art-head">
+    <div class="art-preview" id="art-preview"></div>
+    <div class="art-who">
+      <span class="art-step" id="art-step"></span>
+      <h2 id="art-title"></h2>
+      <p id="art-artist"></p>
+      <p class="art-state" id="art-state"></p>
+    </div>
+  </div>
+  <label class="art-drop" id="art-drop">
+    <input type="file" id="art-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+    <span class="drop-big">Drop or paste the cover here</span>
+    <span class="drop-small">Drag an image in (from a file or another tab), press Ctrl+V with one copied, or click to choose a file</span>
+  </label>
+  <div class="art-link">
+    <input type="url" id="art-url" placeholder="…or paste a link to the image, or to the album's Bandcamp / SoundCloud page">
+    <button class="btn" id="art-get" type="button">Get</button>
+  </div>
+  <p class="art-find">Find it: <a id="art-bc" target="_blank" rel="noopener">Bandcamp</a> · <a id="art-gi" target="_blank" rel="noopener">Google Images</a></p>
+  <p class="art-msg" id="art-msg" role="status"></p>
+  <div class="art-foot">
+    <button class="linkbtn" id="art-remove" type="button" hidden>Remove my cover</button>
+    <span class="grow"></span>
+    <button class="btn" id="art-skip" type="button">Skip</button>
+    <button class="btn primary" id="art-close" type="button">Close</button>
+  </div>
+</dialog>
+
 <datalist id="genres"></datalist>
 <script src="app.js"></script>
 </body>

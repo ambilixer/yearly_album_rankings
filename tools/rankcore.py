@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from rym import (DATE_RE, META, RANK_COLS, RANKINGS, RAW, TAG_COLS, TAGS, export_paths, read_csv,
-                 read_export, snapshot_paths, validate_snapshot, write_csv)
+from rym import (DATE_RE, META, RANK_COLS, RANKINGS, RAW, TAG_COLS, TAGS, export_paths, find_duplicates,
+                 manual_art, read_csv, read_export, snapshot_paths, validate_snapshot, write_csv)
 
 
 def export_date(filename: str) -> str:
@@ -37,8 +37,10 @@ def propose(year: int, export_d: str | None = None) -> dict:
     if not exports:
         raise ValueError("No RYM exports yet.")
     export_d = export_d or max(exports)
-    rows = read_export(exports[export_d])
-    info = {r["rym_id"]: r for r in rows if r["year"] == year}
+    tags = {int(t["rym_id"]): t for t in read_csv(TAGS)}
+    year_rows = [r for r in read_export(exports[export_d]) if r["year"] == year]
+    dupes, twice = find_duplicates(year_rows, excitement=excitement_map(tags))
+    info = {r["rym_id"]: r for r in year_rows if r["rym_id"] not in dupes}
     rated = {rid: r["rating10"] / 2 for rid, r in info.items() if r["rating10"]}
 
     snaps = snapshot_paths(year)
@@ -58,17 +60,16 @@ def propose(year: int, export_d: str | None = None) -> dict:
         tiers.setdefault(rated[rid], {"down": [], "same": [], "up": [], "new": []})["new"].append(rid)
 
     order = [rid for st in sorted(tiers, reverse=True) for part in ("down", "same", "up", "new") for rid in tiers[st][part]]
-    tags = {int(t["rym_id"]): t for t in read_csv(TAGS)}
-    meta = {int(m["rym_id"]): m for m in read_csv(META)}
+    art = art_lookup()
 
     def item(rid: int) -> dict:
-        r, t, m = info.get(rid, {}), tags.get(rid, {}), meta.get(rid, {})
+        r, t = info.get(rid, {}), tags.get(rid, {})
         return {
             "id": rid, "artist": r.get("artist", t.get("artist", "")), "album": r.get("album", t.get("album", "")),
             "rymStars": rated.get(rid), "prevRank": prev_rank.get(rid), "prevStars": prev_stars.get(rid),
             "genre": t.get("genre", ""), "artsy": bool(t.get("artsy", "").strip()), "aggressive": bool(t.get("aggressive", "").strip()),
             "excitement": int(t["excitement"]) if t.get("excitement", "").strip().isdigit() else None,
-            "art": m.get("art_url", ""),
+            **art(rid),
         }
 
     ranked = []
@@ -78,11 +79,62 @@ def propose(year: int, export_d: str | None = None) -> dict:
         ranked.append(it)
     queue = [item(rid) for rid in sorted(set(info) - set(rated), key=lambda r: (info[r]["artist"].lower(), info[r]["album"].lower()))]
     dropped = [{"id": rid, "artist": r["artist"], "album": r["album"]} for rid, r in
-               ((rid, next((p for p in prev if int(p["rym_id"]) == rid), {})) for rid in prev_order if rid not in rated)]
+               ((rid, next((p for p in prev if int(p["rym_id"]) == rid), {})) for rid in prev_order
+                if rid not in rated and rid not in dupes)]
     genres = sorted({t.get("genre", "").strip() for t in tags.values() if t.get("genre", "").strip()})
     existing = [d for d, _ in snaps]
     return {"year": year, "exportDate": export_d, "date": export_d, "prevDate": prev_date,
-            "existingSnapshots": existing, "ranked": ranked, "queue": queue, "dropped": dropped, "genres": genres}
+            "existingSnapshots": existing, "ranked": ranked, "queue": queue, "dropped": dropped, "genres": genres,
+            **dupe_notes(info, dupes, twice)}
+
+
+def excitement_map(tags: dict[int, dict]) -> dict[int, int]:
+    return {rid: int(t["excitement"]) for rid, t in tags.items() if (t.get("excitement") or "").strip().isdigit()}
+
+
+def dupe_notes(info: dict, dupes: dict[int, int], twice: list) -> dict:
+    kept = sorted({k for k in dupes.values()}, key=lambda k: (info.get(k, {}).get("artist", "").lower()))
+    return {
+        "duplicates": [{"id": k, "artist": info.get(k, {}).get("artist", ""), "album": info.get(k, {}).get("album", ""),
+                        "removed": sorted(d for d, kk in dupes.items() if kk == k)} for k in kept],
+        "ratedTwice": [{"artist": a, "album": t, "ids": ids} for a, t, ids in twice],
+    }
+
+
+def art_lookup():
+    """Returns art(rym_id) -> {"art": url, "artState": ...}. artState is "manual" (added in
+    this app), "auto" (found by enrich.py), "none" (looked up, nothing found) or "pending"
+    (not looked up yet; GitHub tries after the next publish)."""
+    meta = {int(m["rym_id"]): m for m in read_csv(META)}
+    manual = manual_art()
+
+    def art(rid: int) -> dict:
+        if rid in manual:
+            return {"art": manual[rid], "artState": "manual"}
+        m = meta.get(rid, {})
+        if m.get("art_url"):
+            return {"art": m["art_url"], "artState": "auto"}
+        return {"art": "", "artState": "none" if m.get("checked") else "pending"}
+    return art
+
+
+def refresh_draft(year: int, draft: dict) -> dict:
+    """Bring a saved draft up to date: drop queue duplicates and refresh cover art
+    (GitHub may have found covers since the draft was started)."""
+    exports = dict(export_paths())
+    path = exports.get(draft.get("exportDate"))
+    if path:
+        tags = {int(t["rym_id"]): t for t in read_csv(TAGS)}
+        year_rows = [r for r in read_export(path) if r["year"] == year]
+        # albums already given stars in this draft count as ranked
+        ranked_ids = {int(a["id"]) for a in draft.get("ranked", [])}
+        dupes, twice = find_duplicates(year_rows, ranked_ids, excitement_map(tags))
+        draft["queue"] = [a for a in draft.get("queue", []) if int(a["id"]) not in dupes]
+        draft.update(dupe_notes({r["rym_id"]: r for r in year_rows}, dupes, twice))
+    art = art_lookup()
+    for a in draft.get("ranked", []) + draft.get("queue", []):
+        a.update(art(int(a["id"])))
+    return draft
 
 
 def save(year: int, snap_date: str, ranked: list[dict], queue: list[dict]) -> dict:

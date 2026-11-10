@@ -84,11 +84,23 @@
     if (at < 0) at = D.ranked.length;
     D.ranked.splice(at, 0, a);
   }
-  function cover(a) {
-    const c = h("div", "art");
-    if (a.art) { const img = new Image(); img.src = a.art; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.onerror = () => img.remove(); c.append(img); }
+  // covers added in this app live in site/art/ and come back as "art/<file>"
+  const artSrc = (u) => (!u ? "" : /^https?:/i.test(u) ? u : "/site/" + u);
+  function coverImg(a, cls) {
+    const c = h("span", cls);
+    if (a.art) { const img = new Image(); img.src = artSrc(a.art); img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.onerror = () => img.remove(); c.append(img); }
     else c.textContent = (a.album || "?").trim().charAt(0).toUpperCase();
     return c;
+  }
+  function cover(a) {
+    const b = h("button", "art" + (a.art ? "" : " no-art"));
+    b.type = "button";
+    b.title = a.art ? "Change cover art" : "Add cover art";
+    b.setAttribute("aria-label", `${b.title}: ${a.album}`);
+    b.append(...coverImg(a, "art-in").childNodes);
+    b.addEventListener("click", () => Art.open([a]));
+    b.addEventListener("mousedown", (e) => e.stopPropagation());
+    return b;
   }
   function starSelect(value, withUnrated, onChange) {
     const s = h("select", "stars-sel");
@@ -139,6 +151,28 @@
       const w = h("p", "err");
       w.textContent = `Not rated in this export, so left out: ${D.dropped.map((a) => `${a.artist} – ${a.album}`).join("; ")}. Rate it on RYM, or give it stars in the Queue tab.`;
       box.append(w);
+    }
+    const all = [...D.ranked, ...D.queue];
+    const noArt = all.filter((a) => a.artState === "none");
+    const pending = all.filter((a) => a.artState === "pending").length;
+    if (noArt.length || pending) {
+      const w = h("div", "art-line");
+      const msg = [];
+      if (noArt.length) msg.push(`${noArt.length} album${noArt.length === 1 ? " has" : "s have"} no cover art, and GitHub couldn't find ${noArt.length === 1 ? "one" : "them"}.`);
+      if (pending) msg.push(`${pending} new album${pending === 1 ? " hasn't" : "s haven't"} been looked up yet; GitHub will try after you publish.`);
+      w.append(h("span", null, msg.join(" ")));
+      if (noArt.length) {
+        const b = h("button", "btn small", "Add missing covers"); b.type = "button";
+        b.onclick = () => Art.open(noArt, true);
+        w.append(b);
+      }
+      box.append(w);
+    }
+    if (D.duplicates && D.duplicates.length) {
+      box.append(h("p", "note-line", `Listed twice on RYM, showing one copy: ${D.duplicates.map((a) => `${a.artist} – ${a.album}`).join("; ")}.`));
+    }
+    if (D.ratedTwice && D.ratedTwice.length) {
+      box.append(h("p", "warn-line", `Rated twice on RYM, so both copies are ranked: ${D.ratedTwice.map((a) => `${a.artist} – ${a.album}`).join("; ")}. Unrate one on RYM (or set one to Unrated here).`));
     }
     if (D.existingSnapshots.includes($("date").value)) {
       const w = h("p", "warn-line", `A ranking dated ${$("date").value} already exists. Saving will replace it.`);
@@ -254,6 +288,109 @@
     });
     box.append(list);
   }
+
+  // ---------- cover art ----------
+  const Art = (() => {
+    const dlg = $("art-dlg");
+    let list = [], i = 0, walk = false, busy = false;
+
+    function open(items, walkthrough = false) {
+      list = items.slice(); i = 0; walk = walkthrough;
+      if (!list.length) return;
+      show();
+      if (!dlg.open) dlg.showModal();
+    }
+    function cur() { return list[i]; }
+    function show() {
+      const a = cur();
+      $("art-title").textContent = a.album;
+      $("art-artist").textContent = a.artist;
+      $("art-step").textContent = walk ? `${i + 1} of ${list.length}` : "";
+      $("art-preview").replaceChildren(...coverImg(a, "x").childNodes);
+      $("art-preview").classList.toggle("empty", !a.art);
+      $("art-state").textContent = { manual: "Your cover", auto: "Found automatically", none: "No cover yet", pending: "Not looked up yet" }[a.artState] || "";
+      $("art-url").value = "";
+      $("art-msg").textContent = ""; $("art-msg").className = "art-msg";
+      $("art-remove").hidden = a.artState !== "manual";
+      $("art-skip").hidden = !walk || i === list.length - 1;
+      $("art-close").textContent = walk ? (i === list.length - 1 ? "Done" : "Stop here") : "Close";
+      const q = encodeURIComponent(`${a.artist} ${a.album}`);
+      $("art-bc").href = `https://bandcamp.com/search?q=${q}`;
+      $("art-gi").href = `https://www.google.com/search?tbm=isch&q=${q}`;
+    }
+    function msg(t, cls = "") { $("art-msg").textContent = t; $("art-msg").className = "art-msg " + cls; }
+    function next() { if (i < list.length - 1) { i++; show(); } else dlg.close(); }
+
+    // Shrink to at most 800px on the long side and save as JPEG, so covers stay small in the repo.
+    async function toJpeg(blob) {
+      let bmp;
+      try { bmp = await createImageBitmap(blob); }
+      catch { throw new Error("Couldn't read that as an image."); }
+      const k = Math.min(1, 800 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      const g = c.getContext("2d");
+      g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);  // transparent PNGs
+      g.drawImage(bmp, 0, 0, c.width, c.height);
+      return { jpg: await new Promise((r) => c.toBlob(r, "image/jpeg", 0.9)), w: bmp.width, h: bmp.height };
+    }
+    function apply(id, res) {
+      [...D.ranked, ...D.queue].forEach((x) => { if (x.id === id) Object.assign(x, res); });
+      render(); dirty();
+    }
+    async function useBlob(blob) {
+      if (busy) return;
+      const a = cur();
+      busy = true; msg("Saving…");
+      try {
+        const { jpg, w, h: ht } = await toJpeg(blob);
+        const res = await api("/api/art", jpg, { "X-Rym-Id": String(a.id), "Content-Type": "image/jpeg" });
+        apply(a.id, res);
+        const small = Math.max(w, ht) < 300 ? ` It's only ${w}×${ht}, so it may look soft on the dashboard.` : "";
+        if (walk && i < list.length - 1) { next(); msg(`Saved the cover for ${a.album}.${small}`, small ? "warn" : "ok"); }
+        else { show(); msg(`Saved.${small}`, small ? "warn" : "ok"); }
+      } catch (e) { msg(e.message, "bad"); }
+      busy = false;
+    }
+    async function useUrl(u) {
+      u = (u || "").trim();
+      if (!u) return;
+      msg("Downloading…");
+      try {
+        const res = await fetch("/api/fetch-image?url=" + encodeURIComponent(u));
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Download failed (${res.status})`);
+        await useBlob(await res.blob());
+      } catch (e) { msg(e.message, "bad"); }
+    }
+
+    const drop = $("art-drop");
+    ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", (e) => {
+      const f = [...e.dataTransfer.files].find((x) => x.type.startsWith("image/"));
+      if (f) return useBlob(f);
+      const u = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");  // image dragged from another tab
+      if (u) useUrl(u.split("\n")[0]);
+    });
+    $("art-file").addEventListener("change", (e) => { if (e.target.files[0]) useBlob(e.target.files[0]); e.target.value = ""; });
+    dlg.addEventListener("paste", (e) => {
+      const f = [...e.clipboardData.files].find((x) => x.type.startsWith("image/"));
+      if (f) { e.preventDefault(); useBlob(f); return; }
+      if (e.target === $("art-url")) return;  // let the paste land, then they press Get
+      const t = e.clipboardData.getData("text").trim();
+      if (/^https?:\/\//i.test(t)) { e.preventDefault(); $("art-url").value = t; useUrl(t); }
+    });
+    $("art-get").onclick = () => useUrl($("art-url").value);
+    $("art-url").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); useUrl($("art-url").value); } });
+    $("art-skip").onclick = () => next();
+    $("art-close").onclick = () => dlg.close();
+    $("art-remove").onclick = async () => {
+      const a = cur();
+      try { apply(a.id, await api("/api/art-delete", { id: a.id })); show(); msg("Removed your cover.", "ok"); }
+      catch (e) { msg(e.message, "bad"); }
+    };
+    return { open };
+  })();
 
   // ---------- top bar ----------
   $("tab-rank").onclick = () => { tab = "rank"; render(); };

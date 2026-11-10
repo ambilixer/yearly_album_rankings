@@ -14,7 +14,8 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from rym import EXCITEMENT, META, RANKINGS, ROOT, TAGS, export_paths, read_csv, read_export, snapshot_paths, validate_snapshot
+from rym import (EXCITEMENT, META, RANKINGS, ROOT, TAGS, export_paths, find_duplicates, manual_art, read_csv, read_export,
+                 snapshot_paths, validate_snapshot)
 
 OUT = ROOT / "site" / "data"
 SPLIT = re.compile(r"\s*(?:,|&|/| x | and |\bfeat\.?|\bwith\b)\s*", re.I)
@@ -88,9 +89,23 @@ def build_year(year: int) -> dict:
             if m.get("release_date"):
                 a["released"] = m["release_date"]
                 a["releasedSource"] = m.get("date_source", "")
+    for rid, url in manual_art().items():  # covers added by hand in the ranking app win
+        if rid in albums:
+            albums[rid]["art"] = url
 
     latest_snap = snaps[-1][0]
     latest_export = exports[-1][0] if exports else None
+
+    # the same album listed twice on RYM: drop the unranked copy (see rym.find_duplicates)
+    dupes = {}
+    if latest_export:
+        latest_rows = [r for r in catalog if r["year"] == year]
+        latest_ranked = {int(r["rym_id"]) for r in read_csv(snaps[-1][1])}
+        excitement = {rid: a["excitement"] for rid, a in albums.items() if a["excitement"]}
+        dupes, _ = find_duplicates(latest_rows, latest_ranked, excitement)
+        for rid in dupes:
+            if not albums[rid]["ranks"]:
+                del albums[rid]
 
     # artist affinity: your RYM ratings of the same artist's other releases (any year)
     by_artist = defaultdict(list)
@@ -101,7 +116,7 @@ def build_year(year: int) -> dict:
 
     unrated = []
     for a in albums.values():
-        if latest_snap in a["ranks"]:
+        if latest_snap in a["ranks"] or a["id"] in dupes:
             continue
         if latest_export and latest_export in a["rym"] and a["rym"][latest_export] is None:
             prior = {}

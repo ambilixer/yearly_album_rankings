@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import html
 import re
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -12,6 +14,8 @@ RAW = DATA / "raw" / "rym"
 RANKINGS = DATA / "rankings"
 TAGS = DATA / "tags.csv"
 META = DATA / "meta.csv"
+ART = ROOT / "site" / "art"  # covers added by hand in the ranking app: <rym_id>.jpg/.png/.webp
+ART_EXTS = (".jpg", ".png", ".webp")
 
 DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
@@ -93,6 +97,53 @@ def write_csv(path: Path, cols: list[str], rows: list[dict]) -> None:
 def snapshot_paths(year: int | str) -> list[tuple[str, Path]]:
     d = RANKINGS / str(year)
     return sorted((DATE_RE.search(p.name).group(1), p) for p in d.glob("*.csv") if DATE_RE.search(p.name))
+
+
+def same_key(artist: str, album: str) -> tuple[str, str]:
+    """Artist + title, ignoring case, spacing and Unicode width differences."""
+    n = lambda s: " ".join(unicodedata.normalize("NFKC", s or "").casefold().split())  # noqa: E731
+    return n(artist), n(album)
+
+
+def find_duplicates(rows: list[dict], ranked_ids=(), excitement: dict[int, int] | None = None):
+    """RYM sometimes lists the same album twice (same artist and title, two IDs).
+
+    `rows` are one year's export rows. An album counts as ranked if it's rated in the
+    export or its ID is in `ranked_ids`. Rules:
+      - one copy ranked, others not: drop the unranked copies
+      - none ranked: keep one (highest excitement, then the older RYM ID), drop the rest
+      - two or more ranked: drop nothing, report it so it can be fixed on RYM
+
+    Returns ({dropped_id: kept_id}, [(artist, album, [ranked ids]) rated more than once]).
+    """
+    excitement = excitement or {}
+    ranked_ids = set(ranked_ids)
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        groups.setdefault(same_key(r["artist"], r["album"]), []).append(r)
+    dropped, twice = {}, []
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        ranked = [r["rym_id"] for r in g if r["rating10"] or r["rym_id"] in ranked_ids]
+        if len(ranked) > 1:
+            twice.append((g[0]["artist"], g[0]["album"], sorted(ranked)))
+        keep = ranked[0] if ranked else min((r["rym_id"] for r in g), key=lambda i: (-excitement.get(i, 0), i))
+        for r in g:
+            if r["rym_id"] != keep and r["rym_id"] not in ranked:
+                dropped[r["rym_id"]] = keep
+    return dropped, twice
+
+
+def manual_art() -> dict[int, str]:
+    """Covers added by hand, as {rym_id: 'art/<file>?v=<hash>'} (relative to site/)."""
+    out = {}
+    if ART.is_dir():
+        for p in sorted(ART.iterdir()):
+            if p.suffix.lower() in ART_EXTS and p.stem.isdigit():
+                v = hashlib.sha1(p.read_bytes()).hexdigest()[:8]
+                out[int(p.stem)] = f"art/{p.name}?v={v}"
+    return out
 
 
 def validate_snapshot(rows: list[dict]) -> list[str]:
