@@ -25,6 +25,7 @@
 - **Lookups run in the app now.** Loading an export looks up art and dates for new albums on Charlie's computer (`enrich.look_up_one`, one album per request so the banner shows progress). It also redoes the RYM-ID date estimates, so GitHub's run after a publish normally changes nothing and makes no extra commit. If the lookup sites can't be reached, those albums are left for GitHub and stay retryable.
 - **Auto-pull on start:** `rank.py` runs `git pull --ff-only` before opening (skip with `--no-pull`). It never merges; if it can't, the app shows why.
 - **Fix:** editing a genre then clicking a summary button no longer swallows the click (genre edits refresh only the counter chips).
+- **Dashboard tweaks:** title and header in sentence case ("Andy Charlie's best albums of 2026", "Best albums"). Ranking trends has only Top 25 (default) and All, and its x axis is to scale in time (month lines, a tick per update). Intro drops "Here's the latest."; full ranking description rewritten, year filled in from the data.
 
 ## Decisions to remember
 
