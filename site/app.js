@@ -180,7 +180,7 @@
     const s = snap(), list = ranked(), a = list[0];
     $("title").innerHTML = "";
     $("title").append(document.createTextNode("Best albums of "), h("em", null, String(S.data.year)));
-    document.title = `Andy Charlie's Best Albums of ${S.data.year}`;
+    document.title = `Andy Charlie's best albums of ${S.data.year}`;
     const latest = S.si === S.snaps.length - 1;
     $("lede").textContent = latest
       ? `Last updated ${fmtLong(s)}.`
