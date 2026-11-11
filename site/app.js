@@ -185,7 +185,8 @@
     $("lede").textContent = latest
       ? `Last updated ${fmtLong(s)}.`
       : `You're looking at the list as it stood on ${fmtLong(s)}. The latest update is ${fmtLong(S.snaps[S.snaps.length - 1])}.`;
-    $("intro").textContent = `I'm ranking my favorite albums of ${S.data.year}, aided by star ratings applied to albums (out of 5) on Rate Your Music. I'll be re-evaluating albums as I go, and updating this several times throughout the year. ${latest ? "Here's the latest." : "This is an earlier version."}`;
+    $("intro").textContent = `I'm ranking my favorite albums of ${S.data.year}, aided by star ratings applied to albums (out of 5) on Rate Your Music. I'll be re-evaluating albums as I go, and updating this several times throughout the year.${latest ? "" : " This is an earlier version."}`;
+    $("ranking-sub").textContent = `Full list of albums I've rated in ${S.data.year}. You can use the vibe toggles to filter albums based on feel and energy.`;
     const n1 = $("n1"); n1.replaceChildren();
     if (a) {
       const right = h("div");
@@ -290,7 +291,10 @@
     const m = { top: 26, right: labW, bottom: 14, left: 34 };
     const rowPx = 9;
     const H = Math.max(300, Math.min(maxR * rowPx, 900)) + m.top + m.bottom;
-    const x = d3.scalePoint(S.snaps, [m.left, W - m.right]).padding(0.05);
+    // x is to scale in time: updates that came close together sit close together
+    const day = (s) => new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)));
+    const xt = d3.scaleUtc([day(S.snaps[0]), day(S.snaps[S.snaps.length - 1])], [m.left + 8, W - m.right - 8]);
+    const x = (s) => xt(day(s));
     const y = d3.scaleLinear([1, maxR], [m.top, H - m.bottom]);
     const svg = d3.create("svg").attr("width", "100%").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img")
       .attr("aria-label", "Bump chart of album ranks across updates");
@@ -301,9 +305,13 @@
     if (!yt.includes(1)) yt.unshift(1);
     svg.append("g").selectAll("line").data(yt).join("line").attr("class", "c-grid").attr("x1", m.left).attr("x2", W - m.right).attr("y1", y).attr("y2", y);
     svg.append("g").selectAll("text").data(yt).join("text").attr("class", "c-tick").attr("x", m.left - 10).attr("y", y).attr("dy", "0.32em").attr("text-anchor", "end").text((t) => "#" + t);
-    const every = narrow ? Math.ceil(S.snaps.length / 4) : 1;
-    svg.append("g").selectAll("text").data(S.snaps).join("text").attr("class", "c-tick").attr("x", x).attr("y", 12).attr("text-anchor", "middle")
-      .text((d, i) => (i % every === 0 || i === S.snaps.length - 1 ? fmtDate(d) : ""));
+    // month labels and faint month lines, plus a small tick for each update
+    const months = xt.ticks(d3.utcMonth.every(narrow ? 2 : 1)).filter((d) => xt(d) >= m.left && xt(d) <= W - m.right);
+    svg.append("g").selectAll("line").data(months).join("line").attr("class", "c-grid c-vgrid").attr("x1", xt).attr("x2", xt).attr("y1", m.top - 6).attr("y2", H - m.bottom);
+    svg.append("g").selectAll("text").data(months).join("text").attr("class", "c-tick").attr("x", (d) => xt(d) + 4).attr("y", 11)
+      .text((d) => MONTHS[d.getUTCMonth()] + (d.getUTCMonth() === 0 ? ` ${d.getUTCFullYear()}` : ""));
+    svg.append("g").selectAll("line").data(S.snaps).join("line").attr("class", "c-upd").attr("x1", x).attr("x2", x).attr("y1", 15).attr("y2", 20)
+      .append("title").text((d) => `Update: ${fmtLong(d)}`);
     svg.append("line").attr("class", "c-now").attr("x1", x(snap())).attr("x2", x(snap())).attr("y1", m.top - 6).attr("y2", H - m.bottom);
 
     const line = d3.line().defined((d) => d.r != null).x((d) => x(d.s)).y((d) => y(d.r)).curve(d3.curveMonotoneX);
