@@ -1,5 +1,6 @@
 """Look up cover art and release dates for every release in a year, and save them to
-data/meta.csv. Runs in GitHub Actions on every push (it needs internet access).
+data/meta.csv. Runs in GitHub Actions on every push (it needs internet access). The
+ranking app also runs the same lookup on your computer when you load an export.
 
     python tools/enrich.py              # every year with a rankings folder
     python tools/enrich.py 2026 --retry # also retry albums that found nothing last time
@@ -34,9 +35,14 @@ SPLIT = re.compile(r"\s*(?:,|&|/|\+| x | and | feat\.? | with )\s*", re.I)
 
 
 # ---------- http ----------
+MAX_TRIES = 4    # the ranking app lowers this so it gives up faster when offline
+NET_FAILS = 0    # requests that never got an answer (offline, timeouts, server errors)
+
+
 def get_json(url: str, pause: float):
+    global NET_FAILS
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    for attempt in range(4):
+    for attempt in range(MAX_TRIES):
         try:
             with urllib.request.urlopen(req, timeout=25) as r:
                 data = json.load(r)
@@ -56,6 +62,7 @@ def get_json(url: str, pause: float):
             return None
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             time.sleep(3 * (attempt + 1))
+    NET_FAILS += 1
     return None
 
 
@@ -234,7 +241,9 @@ def estimate_dates(rows: list[dict], year: int, latest_by_id: dict[int, str]) ->
 
 
 # ---------- main ----------
-def enrich_year(year: int, rows_by_id: dict[int, dict], retry: bool) -> None:
+def year_albums(year: int) -> tuple[dict[int, dict], dict[int, str]]:
+    """Every release of the year: the latest export's, plus anything ever ranked.
+    Also returns {rym_id: date first ranked}."""
     exports = export_paths()
     latest = read_export(exports[-1][1]) if exports else []
     albums = {r["rym_id"]: r for r in latest if r["year"] == year}
@@ -244,35 +253,57 @@ def enrich_year(year: int, rows_by_id: dict[int, dict], retry: bool) -> None:
             rid = int(r["rym_id"])
             first_ranked.setdefault(rid, d)
             albums.setdefault(rid, {"rym_id": rid, "artist": r["artist"], "artist_orig": r["artist"], "album": r["album"]})
+    return albums, first_ranked
 
+
+def needs_lookup(row: dict, retry: bool = False, today: date | None = None) -> bool:
+    """No art or no real date yet, and not already tried in the last RETRY_DAYS (unless retry)."""
+    if row.get("locked"):
+        return False
+    if row.get("art_url") and row.get("date_source") in REAL_SOURCES:
+        return False
+    today = today or date.today()
+    recent = row.get("checked") and (today - date.fromisoformat(row["checked"])).days < RETRY_DAYS
+    return not recent or retry
+
+
+def look_up_one(a: dict, row: dict, year: int) -> dict:
+    """Look up one album and record the result in its meta row. Returns the lookup result.
+    If the sources couldn't be reached, the row isn't marked as checked, so it gets tried again."""
+    fails = NET_FAILS
+    variants = list(dict.fromkeys(v for v in (a["artist"], a.get("artist_orig")) if v))
+    res = lookup(variants, a["album"], year)
+    res["offline"] = NET_FAILS > fails and not res.get("art") and not res.get("date")
+    if res["offline"]:
+        return res
+    row["checked"] = date.today().isoformat()
+    if res.get("art"):
+        row["art_url"] = res["art"]
+    if res.get("date"):
+        row["release_date"], row["date_source"] = res["date"], res["src"]
+    row["match"] = res.get("match", "")
+    return res
+
+
+def enrich_year(year: int, rows_by_id: dict[int, dict], retry: bool) -> None:
+    albums, first_ranked = year_albums(year)
     today = date.today()
     todo = []
     for rid, a in albums.items():
         row = rows_by_id.setdefault(rid, {"rym_id": rid})
         row["artist"], row["album"] = a["artist"], a["album"]
-        if row.get("locked"):
-            continue
-        done = row.get("art_url") and row.get("date_source") in REAL_SOURCES
-        recent = row.get("checked") and (today - date.fromisoformat(row["checked"])).days < RETRY_DAYS
-        if done or (recent and not retry):
-            continue
-        todo.append(a)
+        if needs_lookup(row, retry, today):
+            todo.append(a)
 
     print(f"{year}: {len(albums)} releases, looking up {len(todo)}")
     found_art = found_date = 0
     for i, a in enumerate(todo, 1):
-        variants = list(dict.fromkeys(v for v in (a["artist"], a.get("artist_orig")) if v))
-        res = lookup(variants, a["album"], year)
-        row = rows_by_id[a["rym_id"]]
-        row["checked"] = today.isoformat()
-        if res.get("art"):
-            row["art_url"] = res["art"]
-            found_art += 1
-        if res.get("date"):
-            row["release_date"], row["date_source"] = res["date"], res["src"]
-            found_date += 1
-        row["match"] = res.get("match", "")
+        res = look_up_one(a, rows_by_id[a["rym_id"]], year)
+        found_art += bool(res.get("art"))
+        found_date += bool(res.get("date"))
         status = ("art " if res.get("art") else "") + ("date " if res.get("date") else "")
+        if res["offline"]:
+            status = "couldn't reach the sources "
         print(f"  [{i}/{len(todo)}] {a['artist']} – {a['album']}: {status or 'no match'}{'  <- ' + res['match'] if res.get('match') else ''}")
     print(f"  found art for {found_art}, dates for {found_date} of {len(todo)} looked up")
 
@@ -284,6 +315,11 @@ def enrich_year(year: int, rows_by_id: dict[int, dict], retry: bool) -> None:
     print(f"  {year} coverage: art {have_art}/{len(albums)}, real dates {real}, estimated {est}")
 
 
+def save_meta(rows_by_id: dict[int, dict]) -> None:
+    rows = sorted(rows_by_id.values(), key=lambda r: (r.get("artist", "").lower(), r.get("album", "").lower()))
+    write_csv(META, META_COLS, rows)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("years", nargs="*", type=int)
@@ -293,8 +329,7 @@ def main() -> None:
     rows_by_id = {int(r["rym_id"]): r for r in read_csv(META)}
     for y in years:
         enrich_year(y, rows_by_id, args.retry)
-    rows = sorted(rows_by_id.values(), key=lambda r: (r.get("artist", "").lower(), r.get("album", "").lower()))
-    write_csv(META, META_COLS, rows)
+    save_meta(rows_by_id)
 
 
 if __name__ == "__main__":

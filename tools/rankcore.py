@@ -3,7 +3,11 @@ proposed new ranking, and save a finished ranking back to the repo's CSVs."""
 from __future__ import annotations
 
 import re
+import threading
+import urllib.request
 from datetime import date
+
+import enrich
 
 from rym import (DATE_RE, META, RANK_COLS, RANKINGS, RAW, TAG_COLS, TAGS, export_paths, find_duplicates,
                  manual_art, read_csv, read_export, snapshot_paths, validate_snapshot, write_csv)
@@ -103,8 +107,8 @@ def dupe_notes(info: dict, dupes: dict[int, int], twice: list) -> dict:
 
 def art_lookup():
     """Returns art(rym_id) -> {"art": url, "artState": ...}. artState is "manual" (added in
-    this app), "auto" (found by enrich.py), "none" (looked up, nothing found) or "pending"
-    (not looked up yet; GitHub tries after the next publish)."""
+    this app), "auto" (found by the lookup), "none" (looked up, nothing found) or "pending"
+    (not looked up yet: the app looks these up when it opens)."""
     meta = {int(m["rym_id"]): m for m in read_csv(META)}
     manual = manual_art()
 
@@ -116,6 +120,52 @@ def art_lookup():
             return {"art": m["art_url"], "artState": "auto"}
         return {"art": "", "artState": "none" if m.get("checked") else "pending"}
     return art
+
+
+# ---------- cover art lookups on this computer (same as GitHub's, see enrich.py) ----------
+enrich.MAX_TRIES = 2  # give up quickly if a site doesn't answer
+_meta_lock = threading.Lock()
+
+
+def online() -> bool:
+    try:
+        urllib.request.urlopen(urllib.request.Request("https://api.deezer.com/", headers={"User-Agent": enrich.UA}), timeout=6)
+        return True
+    except urllib.error.HTTPError:
+        return True  # it answered
+    except Exception:
+        return False
+
+
+def lookup_todo(year: int) -> dict:
+    """Albums GitHub would look up on the next publish: no art or real date yet, and not
+    tried in the last 30 days."""
+    rows = {int(m["rym_id"]): m for m in read_csv(META)}
+    albums, _ = enrich.year_albums(year)
+    todo = [{"id": rid, "artist": a["artist"], "album": a["album"]} for rid, a in albums.items()
+            if enrich.needs_lookup(rows.get(rid, {}))]
+    todo.sort(key=lambda a: (a["artist"].lower(), a["album"].lower()))
+    return {"todo": todo, "online": online() if todo else True}
+
+
+def meta_pass(year: int, rid: int | None = None) -> dict:
+    """Do what enrich.py does for a year, without the network except for `rid`: keep names
+    current, look up `rid` if given, refresh the RYM-ID date estimates, save meta.csv.
+    Matching GitHub's run means its lookup step has nothing to change after you publish."""
+    with _meta_lock:
+        rows = {int(m["rym_id"]): m for m in read_csv(META)}
+        albums, first_ranked = enrich.year_albums(year)
+        for r, a in albums.items():
+            row = rows.setdefault(r, {"rym_id": r})
+            row["artist"], row["album"] = a["artist"], a["album"]
+        res = {}
+        if rid is not None and rid in albums and enrich.needs_lookup(rows[rid]):
+            res = enrich.look_up_one(albums[rid], rows[rid], year)
+        enrich.estimate_dates([rows[r] for r in albums], year, first_ranked)
+        enrich.save_meta(rows)
+    out = art_lookup()(rid) if rid is not None else {}
+    out["offline"] = bool(res.get("offline"))
+    return out
 
 
 def refresh_draft(year: int, draft: dict) -> dict:
@@ -164,5 +214,7 @@ def save(year: int, snap_date: str, ranked: list[dict], queue: list[dict]) -> di
     path = RANKINGS / str(year) / f"{snap_date}.csv"
     write_csv(path, RANK_COLS, rows)
     write_csv(TAGS, TAG_COLS, out)
+    if read_csv(META):
+        meta_pass(year)  # date estimates depend on when albums were first ranked
     untagged = sum(1 for a in ranked if not (a.get("genre") or "").strip())
     return {"path": str(path.relative_to(path.parents[3])), "count": len(rows), "untagged": untagged}

@@ -3,8 +3,10 @@
     python tools/rank.py            # current year
     python tools/rank.py 2026
 
-It opens http://localhost:8777 in your browser. Drop in a new RYM export, rank and tag,
-add any missing cover art, save, then publish (git commit + push). Covers you add are
+It first pulls the latest from GitHub (fast-forward only), then opens
+http://localhost:8777 in your browser. Drop in a new RYM export (the app looks up cover
+art and release dates for new albums right away), rank and tag, add any covers it
+couldn't find, save, then publish (git commit + push). Covers you add are
 saved to site/art/<rym_id>.jpg right away and go up with the next publish. Your in-progress work is kept in
 data/.draft-<year>.json, so closing the tab doesn't lose anything.
 """
@@ -105,8 +107,26 @@ def run(cmd: list[str]) -> tuple[int, str]:
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
+def sync_from_github() -> str:
+    """Pull GitHub's latest (e.g. its cover art commits) before starting. Fast-forward only,
+    so it never merges or touches unsaved work: if it can't, it just says why."""
+    if not (ROOT / ".git").exists():
+        return ""
+    code, out = run(["git", "pull", "--ff-only", "origin", "main"])
+    if code == 0:
+        print("Up to date with GitHub." if "up to date" in out.lower() else "Pulled the latest from GitHub.")
+        return ""
+    print(f"Couldn't pull from GitHub, carrying on with your local copy:\n{out}")
+    if "overwritten" in out or "uncommitted" in out:
+        return "Couldn't update from GitHub because you have unpublished changes here. Publish them first, then restart the app."
+    if "Not possible to fast-forward" in out or "diverg" in out:
+        return "Couldn't update from GitHub: your copy and GitHub's have both changed. Run git pull --rebase in the repo folder, then restart the app."
+    return "Couldn't reach GitHub to update first, so this uses your local copy."
+
+
 class Handler(BaseHTTPRequestHandler):
     year = date.today().year
+    sync = ""
 
     def log_message(self, fmt, *args):  # keep the terminal quiet
         pass
@@ -140,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
                 draft = json.loads(d.read_text(encoding="utf-8")) if d.exists() else None
                 if draft:
                     draft = rankcore.refresh_draft(self.year, draft)
-                return self.json({"year": self.year, "exports": [x for x, _ in export_paths()], "draft": draft})
+                return self.json({"year": self.year, "exports": [x for x, _ in export_paths()], "draft": draft, "sync": Handler.sync})
             if p == "/api/fetch-image":  # so the page can resize an image from another site
                 url = (parse_qs(url.query).get("url") or [""])[0].strip()
                 try:
@@ -148,6 +168,8 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
                 return self.send(200, data, {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[image_ext(data)])
+            if p == "/api/lookup-todo":
+                return self.json(rankcore.lookup_todo(self.year))
             if p.startswith("/site/"):
                 return self.static(SITE, p[len("/site/"):])
             return self.static(APP, p.lstrip("/"))
@@ -170,6 +192,8 @@ class Handler(BaseHTTPRequestHandler):
                 save_art(rid, raw)
                 return self.json(rankcore.art_lookup()(rid))
             body = json.loads(raw or b"{}")
+            if p == "/api/lookup":  # one album at a time, so the page can show progress
+                return self.json(rankcore.meta_pass(self.year, int(body["id"])))
             if p == "/api/art-delete":
                 delete_art(int(body["id"]))
                 return self.json(rankcore.art_lookup()(int(body["id"])))
@@ -209,6 +233,8 @@ def main() -> None:
     years = [a for a in sys.argv[1:] if a.isdigit()]
     if years:
         Handler.year = int(years[0])
+    if "--no-pull" not in sys.argv:
+        Handler.sync = sync_from_github()
     try:
         build.main([str(Handler.year)])  # so the preview has data
     except SystemExit as e:

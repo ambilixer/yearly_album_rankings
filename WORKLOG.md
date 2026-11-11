@@ -20,6 +20,12 @@
 - **Duplicates:** same artist + title on RYM is treated as one album (rule in `rym.find_duplicates`, used by the app, saved drafts and `build.py`). Only case so far: @ – *Autosmile* (17140166 ranked, 17141935 dropped from the queue).
 - **Cover art in the app:** banner + "Add missing covers" walkthrough for albums the lookup couldn't find; any cover is clickable to replace. Accepts drop, paste, file, or a link (image or Bandcamp/SoundCloud page, via og:image). Saved as `site/art/<rym_id>.jpg` (max 800px), which overrides `meta.csv`. Kept out of `meta.csv` on purpose so publishes don't conflict with CI's meta commits.
 
+## Nov 11, 2026
+
+- **Lookups run in the app now.** Loading an export looks up art and dates for new albums on Charlie's computer (`enrich.look_up_one`, one album per request so the banner shows progress). It also redoes the RYM-ID date estimates, so GitHub's run after a publish normally changes nothing and makes no extra commit. If the lookup sites can't be reached, those albums are left for GitHub and stay retryable.
+- **Auto-pull on start:** `rank.py` runs `git pull --ff-only` before opening (skip with `--no-pull`). It never merges; if it can't, the app shows why.
+- **Fix:** editing a genre then clicking a summary button no longer swallows the click (genre edits refresh only the counter chips).
+
 ## Decisions to remember
 
 - **Rank respects stars.** No lower-rated album above a higher-rated one. `build.py` blocks deploys that break this.

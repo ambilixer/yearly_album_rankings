@@ -69,6 +69,8 @@ button.art:hover { outline: 2px solid var(--axis); outline-offset: 1px; }
 .art.no-art { border: 1.5px dashed var(--aggr); background: color-mix(in srgb, var(--aggr) 8%, var(--surface-2)); }
 
 .art-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; border-radius: 8px; padding: 8px 12px; background: color-mix(in srgb, var(--aggr) 12%, transparent); }
+.art-line.busy { background: color-mix(in srgb, var(--blue) 10%, transparent); }
+.art-line.done { background: color-mix(in srgb, var(--artsy) 12%, transparent); }
 .note-line { color: var(--ink-2); font-size: 13px; margin: 8px 0 0; }
 .btn.small { padding: 4px 12px; font-size: 13px; }
 

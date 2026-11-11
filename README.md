@@ -9,7 +9,7 @@ My running ranking of the year's best albums, tracked snapshot by snapshot from 
 1. Every few weeks I export my RYM collection and rank every rated release from the year, using the ranking app below.
 2. Each ranking is saved as `data/rankings/<year>/<date>.csv`, and the export it came from as `data/raw/rym/<date>.csv`.
 3. Genre and vibe tags (and excitement for the unrated queue) live in `data/tags.csv`, one row per album, and carry over between rankings.
-4. On every push, GitHub Actions looks up cover art and release dates for new albums (`tools/enrich.py`, saved to `data/meta.csv`), then `tools/build.py` turns everything into `site/data/<year>.json` and publishes the dashboard.
+4. The ranking app looks up cover art and release dates for new albums when you load an export. On every push, GitHub Actions runs the same lookup for anything still missing (`tools/enrich.py`, saved to `data/meta.csv`), then `tools/build.py` turns everything into `site/data/<year>.json` and publishes the dashboard.
 
 ## The ranking app
 
@@ -19,12 +19,12 @@ From the repo folder on your computer:
 python tools/rank.py
 ```
 
-It opens a page in your browser (http://localhost:8777). Then:
+It first pulls the latest from GitHub (fast-forward only, so it never touches unpublished work; if it can't, the app says why), then opens a page in your browser (http://localhost:8777). Then:
 
 1. **Drop in the new RYM export.** The app keeps your last ranking's order within each star tier. Stars come from RYM. An album RYM now rates higher goes to the bottom of its new tier, one rated lower to the top of its new tier, and new albums go to the bottom of theirs.
 2. **Rank and tag.** Drag (or use the arrows) to reorder within a tier. Change stars on any album; it moves tiers automatically. Fill in genre and the artsy/aggressive toggles. Rows show where each album was last time and flag stars that differ from last time or from RYM.
 3. **Queue tab.** Set excitement for unrated albums, or give one stars to add it to the ranking.
-4. **Cover art.** If any albums have no cover (GitHub's lookup found nothing), a banner offers **Add missing covers**, which steps through them one by one. For each, drop or paste (Ctrl+V) an image, choose a file, or paste a link to the image or to the album's Bandcamp/SoundCloud page. Click any cover in the list to replace it. Covers are shrunk to 800px, saved to `site/art/<rym_id>.jpg` right away, and go up with the next publish.
+4. **Cover art.** As soon as an export loads, the app looks up cover art and release dates for new albums on your computer (the same lookup GitHub runs, with progress shown in a banner; keep working while it runs). Albums it can't find get an **Add missing covers** button, which steps through them one by one. For each, drop or paste (Ctrl+V) an image, choose a file, or paste a link to the image or to the album's Bandcamp/SoundCloud page. Click any cover in the list to replace it. Covers are shrunk to 800px, saved to `site/art/<rym_id>.jpg` right away, and go up with the next publish.
 5. **Save ranking**, check **Preview the dashboard**, then **Publish to GitHub** (commits and pushes `data/` and `site/art/`). The live site updates a couple of minutes later.
 
 Work in progress is saved as you go, so you can close the tab and come back. No dependencies beyond Python 3.10+ and git.
@@ -51,7 +51,7 @@ The raw exports and `data/tags.csv` are left as they are. `build.py` refuses to 
 | `data/rankings/<year>/<date>.csv` | me | `rank, rym_id, stars, artist, album, note`. `artist`/`album` are for readability; `rym_id` is the key |
 | `data/tags.csv` | me | `rym_id, artist, album, genre, artsy, aggressive, excitement` |
 | `site/art/<rym_id>.jpg` | the ranking app | Covers added by hand. They override `meta.csv`'s `art_url` |
-| `data/meta.csv` | `tools/enrich.py` (in CI) | `rym_id, artist, album, art_url, release_date, date_source, match, checked, locked`. Fix a wrong match by editing the row and setting `locked` to `X` |
+| `data/meta.csv` | `tools/enrich.py` (the ranking app and CI) | `rym_id, artist, album, art_url, release_date, date_source, match, checked, locked`. Fix a wrong match by editing the row and setting `locked` to `X` |
 
 Tag conventions:
 

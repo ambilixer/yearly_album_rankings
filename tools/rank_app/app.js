@@ -6,7 +6,8 @@
   const STARS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5];
   const EXC = { 3: "Must listen", 2: "Somewhat hype", 1: "Take or leave" };
   const f1 = (v) => Number(v).toFixed(1);
-  let D = null, YEAR = null, tab = "rank", lastSaved = "";
+  let D = null, YEAR = null, tab = "rank", lastSaved = "", SYNC = "";
+  let LK = null;  // cover lookup progress: {running, done, total, found, current, offline, stopped, error}
 
   async function api(path, body, headers = {}) {
     const res = await fetch(path, body === undefined ? {} : { method: "POST", body: body instanceof Blob || typeof body === "string" ? body : JSON.stringify(body), headers });
@@ -35,9 +36,11 @@
   async function init() {
     const st = await api("/api/state");
     YEAR = st.year;
+    SYNC = st.sync || "";
     $("year-label").textContent = `· ${YEAR}`;
     if (st.draft) { load(st.draft); return; }
     show("start");
+    $("start-sync").hidden = !SYNC; $("start-sync").textContent = SYNC;
     const last = st.exports[st.exports.length - 1];
     $("or-existing").replaceChildren();
     if (last) {
@@ -69,6 +72,40 @@
     $("genres").replaceChildren(...D.genres.map((g) => new Option(g)));
     show("editor");
     render();
+    lookUpCovers();
+  }
+
+  // ---------- cover lookups for albums not looked up yet (runs on this computer) ----------
+  async function lookUpCovers() {
+    if (LK && LK.running) return;
+    let r;
+    try { r = await api("/api/lookup-todo"); } catch (e) { return; }
+    if (!D || !r.todo.length) return;
+    if (!r.online) { LK = { offline: true }; renderSummary(); return; }
+    const before = new Map([...D.ranked, ...D.queue].map((a) => [a.id, a.artState]));
+    LK = { running: true, done: 0, total: r.todo.length, found: 0, current: "" };
+    renderSummary();
+    for (const a of r.todo) {
+      if (!D || LK.stopped) break;
+      LK.current = `${a.artist} – ${a.album}`; renderProgress();
+      let res;
+      try { res = await api("/api/lookup", { id: a.id }); } catch (e) { LK.error = e.message; break; }
+      if (res.offline) { LK.offline = true; break; }
+      LK.done++;
+      if (res.artState === "auto" && !["auto", "manual"].includes(before.get(a.id))) LK.found++;
+      setArt(a.id, res);
+    }
+    LK.running = false;
+    if (D) { renderSummary(); dirty(); }
+  }
+  // Swap in the new cover without re-rendering the list (keeps focus while typing a genre).
+  function setArt(id, res) {
+    if (!D) return;
+    [...D.ranked, ...D.queue].forEach((x) => {
+      if (x.id !== id) return;
+      x.art = res.art; x.artState = res.artState;
+      document.querySelectorAll(`[data-id="${id}"] > .art`).forEach((el) => el.replaceWith(cover(x)));
+    });
   }
 
   // ---------- helpers ----------
@@ -131,7 +168,7 @@
     if (tab === "rank") renderTiers(); else renderQueue();
   }
 
-  function renderSummary() {
+  function chipsEl() {
     const news = D.ranked.filter((a) => a.prevRank == null).length;
     const rerated = D.ranked.filter((a) => a.prevStars != null && a.prevStars !== a.stars).length;
     const untagged = D.ranked.filter((a) => !a.genre.trim()).length;
@@ -141,32 +178,64 @@
       [`${rerated} with different stars than last time`, rerated ? "warn" : ""],
       [`${untagged} need a genre`, untagged ? "warn" : ""],
     ];
+    const cs = h("div", "chips");
+    chips.forEach(([t, c]) => cs.append(h("span", "chip " + c, t)));
+    return cs;
+  }
+  // Only the counts. Rebuilding the whole summary on blur would swallow a click on its buttons.
+  function renderChips() { const cs = $("summary").querySelector(".chips"); if (cs) cs.replaceWith(chipsEl()); }
+  // Progress text only, so the Stop button stays put while the lookup runs.
+  function renderProgress() {
+    const sp = $("summary").querySelector(".art-line.busy > span");
+    if (!sp) return renderSummary();
+    sp.textContent = `Looking up cover art and release dates: ${LK.done + 1} of ${LK.total}${LK.current ? ` (${LK.current})` : ""}…`;
+  }
+
+  function renderSummary() {
     const box = $("summary"); box.replaceChildren();
     const line = h("p", "sum-line");
     line.textContent = `From the ${D.exportDate} export${D.prevDate ? `, starting from your ${D.prevDate} ranking` : ""}.`;
-    const cs = h("div", "chips");
-    chips.forEach(([t, c]) => cs.append(h("span", "chip " + c, t)));
-    box.append(line, cs);
+    box.append(line, chipsEl());
     if (D.dropped && D.dropped.length) {
       const w = h("p", "err");
       w.textContent = `Not rated in this export, so left out: ${D.dropped.map((a) => `${a.artist} – ${a.album}`).join("; ")}. Rate it on RYM, or give it stars in the Queue tab.`;
       box.append(w);
     }
+    if (SYNC) box.append(h("p", "warn-line", SYNC));
     const all = [...D.ranked, ...D.queue];
     const noArt = all.filter((a) => a.artState === "none");
     const pending = all.filter((a) => a.artState === "pending").length;
-    if (noArt.length || pending) {
-      const w = h("div", "art-line");
-      const msg = [];
-      if (noArt.length) msg.push(`${noArt.length} album${noArt.length === 1 ? " has" : "s have"} no cover art, and GitHub couldn't find ${noArt.length === 1 ? "one" : "them"}.`);
-      if (pending) msg.push(`${pending} new album${pending === 1 ? " hasn't" : "s haven't"} been looked up yet; GitHub will try after you publish.`);
-      w.append(h("span", null, msg.join(" ")));
+    const pl = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const artLine = h("div", "art-line");
+    const msg = [];
+    if (LK && LK.running) {
+      artLine.classList.add("busy");
+      msg.push(`Looking up cover art and release dates: ${LK.done + 1} of ${LK.total}${LK.current ? ` (${LK.current})` : ""}…`);
+      const stop = h("button", "btn small", "Stop"); stop.type = "button";
+      stop.onclick = () => { LK.stopped = true; stop.disabled = true; };
+      artLine.append(h("span", null, msg.join(" ")), stop);
+      box.append(artLine);
+    } else if (noArt.length || pending || (LK && LK.done)) {
+      if (LK && LK.done) msg.push(`Looked up ${pl(LK.done, "album", "albums")}, found ${pl(LK.found, "new cover", "new covers")}.`);
+      if (noArt.length) msg.push(`${pl(noArt.length, "album has", "albums have")} no cover art the lookup could find.`);
+      if (pending) {
+        if (LK && LK.offline) msg.push(`Couldn't reach the lookup sites, so ${pl(pending, "album hasn't", "albums haven't")} been looked up. GitHub will try after you publish.`);
+        else if (LK && LK.error) msg.push(`The lookup stopped with an error (${LK.error}). ${pl(pending, "album hasn't", "albums haven't")} been looked up.`);
+        else msg.push(`${pl(pending, "album hasn't", "albums haven't")} been looked up yet.`);
+      }
+      artLine.append(h("span", null, msg.join(" ")));
       if (noArt.length) {
         const b = h("button", "btn small", "Add missing covers"); b.type = "button";
         b.onclick = () => Art.open(noArt, true);
-        w.append(b);
+        artLine.append(b);
       }
-      box.append(w);
+      if (pending) {
+        const b = h("button", "btn small", "Look up now"); b.type = "button";
+        b.onclick = () => lookUpCovers();
+        artLine.append(b);
+      }
+      if (!noArt.length && !pending) artLine.classList.add("done");
+      box.append(artLine);
     }
     if (D.duplicates && D.duplicates.length) {
       box.append(h("p", "note-line", `Listed twice on RYM, showing one copy: ${D.duplicates.map((a) => `${a.artist} – ${a.album}`).join("; ")}.`));
@@ -234,7 +303,7 @@
     const genre = h("input", "genre-in"); genre.type = "text"; genre.value = a.genre; genre.placeholder = "genre"; genre.setAttribute("list", "genres");
     if (!a.genre.trim()) genre.classList.add("missing");
     genre.addEventListener("input", () => { a.genre = genre.value; genre.classList.toggle("missing", !genre.value.trim()); dirty(); });
-    genre.addEventListener("change", renderSummary);
+    genre.addEventListener("change", renderChips);
 
     const vibes = h("div", "vibes");
     vibes.append(toggle("Artsy", "artsy", a.artsy, (v) => { a.artsy = v; dirty(); }), toggle("Aggressive", "aggr", a.aggressive, (v) => { a.aggressive = v; dirty(); }));
@@ -264,7 +333,7 @@
     if (!D.queue.length) { box.append(h("p", "hint", "Nothing in the queue.")); return; }
     const list = h("ul", "qlist");
     D.queue.forEach((a) => {
-      const li = h("li", "qrow");
+      const li = h("li", "qrow"); li.dataset.id = a.id;
       const main = h("div", "main"); const t = h("div", "title"); t.append(h("b", null, a.album), h("span", null, a.artist)); main.append(t);
       const ex = h("div", "exc");
       [3, 2, 1].forEach((lvl) => {
@@ -398,7 +467,7 @@
   $("date").addEventListener("change", () => { D.date = $("date").value; renderSummary(); dirty(); });
   $("discard").onclick = async () => {
     if (!confirm("Throw away this draft and start over? Nothing saved to the repo is affected.")) return;
-    await api("/api/discard", {}); D = null; init();
+    await api("/api/discard", {}); D = null; LK = null; init();
   };
   $("save").onclick = async () => {
     const d = $("date").value;
@@ -422,7 +491,7 @@
     } catch (e) { $("log").hidden = false; $("log").textContent = e.message; }
     $("publish").disabled = false; $("publish").textContent = "Publish to GitHub";
   };
-  $("again").onclick = () => init();
+  $("again").onclick = () => { LK = null; init(); };
 
   init().catch((e) => { show("start"); startErr(e); });
 })();
