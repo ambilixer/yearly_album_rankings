@@ -12,7 +12,7 @@
 
   const S = {
     data: null, byId: new Map(), snaps: [], si: 0,
-    bump: "10", q: "", artsy: "any", aggr: "any",
+    bump: "25", q: "", artsy: "any", aggr: "any",
   };
 
   // ---------- theme ----------
@@ -288,7 +288,7 @@
     const maxR = d3.max(albums, (a) => d3.max(Object.values(a.ranks))) || 10;
     const labW = narrow ? 8 : 230;
     const m = { top: 26, right: labW, bottom: 14, left: 34 };
-    const rowPx = S.bump === "10" ? 14 : 9;
+    const rowPx = 9;
     const H = Math.max(300, Math.min(maxR * rowPx, 900)) + m.top + m.bottom;
     const x = d3.scalePoint(S.snaps, [m.left, W - m.right]).padding(0.05);
     const y = d3.scaleLinear([1, maxR], [m.top, H - m.bottom]);
